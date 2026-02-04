@@ -1350,8 +1350,10 @@ def export_pdf(uuid):
 
 
 # ---------------- RUN ----------------
+
 if __name__ == "__main__":
     init_db()
+    threading.Thread(target=tcp_server, daemon=True).start()
 
     port = int(os.environ.get("PORT", 10000))
     serve(app, host="0.0.0.0", port=port)
