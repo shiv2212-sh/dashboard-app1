@@ -1130,11 +1130,9 @@
 # cloud ready server
 
 import os
-import threading
 import psycopg2
-from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, render_template
-from waitress import serve
+from psycopg2.extras import RealDictCursor
 
 app = Flask(__name__, template_folder="templates")
 
@@ -1146,25 +1144,26 @@ def get_db():
 def init_db():
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS clients (
-        uuid TEXT PRIMARY KEY,
-        hostname TEXT,
-        ip TEXT,
-        last_seen TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+        CREATE TABLE IF NOT EXISTS clients (
+            uuid TEXT PRIMARY KEY,
+            hostname TEXT,
+            ip TEXT,
+            last_seen TIMESTAMP
+        )
     """)
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS reports (
-        id SERIAL PRIMARY KEY,
-        uuid TEXT,
-        app_name TEXT,
-        version TEXT,
-        install_date TEXT,
-        size TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    );
+        CREATE TABLE IF NOT EXISTS reports (
+            id SERIAL PRIMARY KEY,
+            uuid TEXT,
+            app_name TEXT,
+            version TEXT,
+            install_date TEXT,
+            size TEXT,
+            ts TIMESTAMP DEFAULT NOW()
+        )
     """)
 
     conn.commit()
@@ -1172,37 +1171,60 @@ def init_db():
     conn.close()
 
 @app.route("/")
-def home():
+def dashboard():
     return render_template("dashboard.html")
 
 @app.route("/api/report", methods=["POST"])
 def report():
-    data = request.json
-    uuid = data["uuid"]
-    hostname = data["hostname"]
-    ip = request.remote_addr
+    try:
+        data = request.get_json(force=True)
 
-    conn = get_db()
-    cur = conn.cursor()
+        uuid = data.get("uuid")
+        hostname = data.get("hostname", "Unknown")
+        apps = data.get("apps", [])
 
-    cur.execute("""
-        INSERT INTO clients (uuid, hostname, ip, last_seen)
-        VALUES (%s,%s,%s,NOW())
-        ON CONFLICT (uuid)
-        DO UPDATE SET last_seen=NOW(), ip=EXCLUDED.ip, hostname=EXCLUDED.hostname
-    """, (uuid, hostname, ip))
+        if not uuid:
+            return jsonify({"error": "Missing uuid"}), 400
 
-    for appx in data["apps"]:
+        ip = request.remote_addr
+
+        conn = get_db()
+        cur = conn.cursor()
+
         cur.execute("""
-            INSERT INTO reports (uuid, app_name, version, install_date, size)
-            VALUES (%s,%s,%s,%s,%s)
-        """, (uuid, appx["name"], appx["version"], appx["date"], appx["size"]))
+            INSERT INTO clients (uuid, hostname, ip, last_seen)
+            VALUES (%s,%s,%s,NOW())
+            ON CONFLICT (uuid)
+            DO UPDATE SET last_seen=NOW(), ip=EXCLUDED.ip, hostname=EXCLUDED.hostname
+        """, (uuid, hostname, ip))
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        for appx in apps:
+            # Accept "App|Version|Date|Size"
+            if isinstance(appx, str):
+                parts = appx.split("|")
+                if len(parts) != 4:
+                    continue
+                name, version, date, size = parts
+            else:
+                name = appx.get("name")
+                version = appx.get("version")
+                date = appx.get("date")
+                size = appx.get("size")
 
-    return jsonify({"status": "ok"})
+            cur.execute("""
+                INSERT INTO reports (uuid, app_name, version, install_date, size)
+                VALUES (%s,%s,%s,%s,%s)
+            """, (uuid, name, version, date, size))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        return jsonify({"status": "ok"})
+
+    except Exception as e:
+        print("SERVER ERROR:", e)
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/api/clients")
 def clients():
@@ -1210,9 +1232,7 @@ def clients():
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("""
-        SELECT uuid, hostname, ip,
-        NOW() - last_seen < INTERVAL '2 minutes' AS online,
-        last_seen
+        SELECT uuid, hostname, ip, last_seen
         FROM clients
         ORDER BY last_seen DESC
     """)
@@ -1221,41 +1241,37 @@ def clients():
     cur.close()
     conn.close()
 
-    result = []
     for r in rows:
-        result.append({
-            "uuid": r["uuid"],
-            "hostname": r["hostname"],
-            "ip": r["ip"],
-            "status": "Online" if r["online"] else "Offline",
-            "last_seen": r["last_seen"].strftime("%Y-%m-%d %H:%M:%S")
-        })
+        r["status"] = "Online"
 
-    return jsonify(result)
+    return jsonify(rows)
 
 @app.route("/api/client/<uuid>")
-def client(uuid):
+def client_detail(uuid):
     conn = get_db()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
     cur.execute("SELECT * FROM clients WHERE uuid=%s", (uuid,))
     client = cur.fetchone()
 
-    cur.execute("SELECT * FROM reports WHERE uuid=%s", (uuid,))
+    cur.execute("""
+        SELECT app_name, version, install_date, size
+        FROM reports WHERE uuid=%s
+        ORDER BY ts DESC
+    """, (uuid,))
     apps = cur.fetchall()
 
     cur.close()
     conn.close()
 
     return jsonify({
-        "uuid": client["uuid"],
-        "hostname": client["hostname"],
-        "hardware": [],
-        "apps": [f"{a['app_name']}|{a['version']}|{a['install_date']}|{a['size']}" for a in apps]
+        "uuid": uuid,
+        "hostname": client["hostname"] if client else "Unknown",
+        "apps": [f"{a['app_name']}|{a['version']}|{a['install_date']}|{a['size']}" for a in apps],
+        "hardware": []
     })
 
 if __name__ == "__main__":
-    print("Starting server...")
     init_db()
     port = int(os.environ.get("PORT", 10000))
-    serve(app, host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port)
