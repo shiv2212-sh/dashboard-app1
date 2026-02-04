@@ -1129,27 +1129,21 @@
 
 # cloud ready server
 
-import threading
-import sqlite3
-import json
-import datetime
 import os
-import tempfile
-
+import sqlite3
+import datetime
 from flask import Flask, jsonify, render_template, send_file, request
 from waitress import serve
+import tempfile
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_FILE = os.path.join(BASE_DIR, "server_data.db")
-TEMPLATE_DIR = os.path.join(BASE_DIR, "templates")
+DB_FILE = "server_data.db"
+TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), "templates")
 
 app = Flask(__name__, template_folder=TEMPLATE_DIR)
-
 
 # ---------------- DATABASE ----------------
 def init_db():
@@ -1203,7 +1197,6 @@ def upsert_client(data, ip):
         data["apps"]
     ))
 
-    # Save app history
     for line in data["apps"].splitlines():
         if "|" in line:
             name, version, install_date, _ = line.split("|", 3)
@@ -1218,9 +1211,9 @@ def upsert_client(data, ip):
 # ---------------- HELPERS ----------------
 def safe_json(v):
     try:
-        return json.loads(v)
-    except:
         return v.splitlines()
+    except:
+        return []
 
 
 def status_from_last_seen(ts):
@@ -1231,16 +1224,10 @@ def status_from_last_seen(ts):
         return "Offline"
 
 
-# ---------------- API ROUTES ----------------
-
-@app.route("/api/upload", methods=["POST"])
-def api_upload():
-    data = request.json
-    if not data:
-        return {"error": "No JSON received"}, 400
-
-    upsert_client(data, request.remote_addr)
-    return {"status": "ok"}
+# ---------------- ROUTES ----------------
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html")
 
 
 @app.route("/api/clients")
@@ -1269,9 +1256,6 @@ def api_client(uuid):
     r = cur.fetchone()
     con.close()
 
-    if not r:
-        return {"error": "Not found"}, 404
-
     return jsonify({
         "uuid": r[0],
         "mac": r[1],
@@ -1283,11 +1267,12 @@ def api_client(uuid):
     })
 
 
-# ---------------- UI ROUTES ----------------
-
-@app.route("/")
-def dashboard():
-    return render_template("dashboard.html")
+# 🔥 THIS IS THE IMPORTANT NEW ROUTE 🔥
+@app.route("/api/report", methods=["POST"])
+def api_report():
+    data = request.get_json(force=True)
+    upsert_client(data, request.remote_addr)
+    return jsonify({"status": "ok"})
 
 
 @app.route("/export/pdf/<uuid>")
@@ -1316,10 +1301,8 @@ def export_pdf(uuid):
             ["Last Seen", r[3]], ["IP", r[4]]]
 
     t1 = Table(info, colWidths=[120, 350])
-    t1.setStyle(TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey)
-    ]))
+    t1.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey)]))
     elements.append(t1)
     elements.append(Spacer(1, 20))
 
@@ -1336,10 +1319,8 @@ def export_pdf(uuid):
         if "|" in l:
             apps.append(l.split("|", 3))
     t3 = Table(apps, colWidths=[180, 90, 100, 100])
-    t3.setStyle(TableStyle([
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey)
-    ]))
+    t3.setStyle(TableStyle([('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+                            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey)]))
     elements.append(t3)
 
     doc.build(elements)
@@ -1350,7 +1331,6 @@ def export_pdf(uuid):
 
 
 # ---------------- RUN ----------------
-
 if __name__ == "__main__":
     init_db()
     port = int(os.environ.get("PORT", 10000))
