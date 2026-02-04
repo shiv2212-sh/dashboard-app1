@@ -1129,107 +1129,143 @@
 
 # cloud ready server
 
+import os
+import json
+import datetime
+import psycopg2
+import psycopg2.extras
 from flask import Flask, request, jsonify
-import sqlite3, os, datetime, uuid
 
 app = Flask(__name__)
-DB_PATH = "server_data.db"
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL not set in environment variables")
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
-
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def init_db():
     conn = get_db()
     cur = conn.cursor()
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS clients (
         uuid TEXT PRIMARY KEY,
         hostname TEXT,
         ip TEXT,
-        last_seen TEXT
-    )
+        last_seen TIMESTAMP,
+        hardware TEXT
+    );
     """)
-
     cur.execute("""
     CREATE TABLE IF NOT EXISTS reports (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        id SERIAL PRIMARY KEY,
         uuid TEXT,
         app_name TEXT,
         version TEXT,
         install_date TEXT,
         size TEXT,
-        ts TEXT
-    )
+        ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
     """)
-
     conn.commit()
+    cur.close()
     conn.close()
 
+init_db()
+
+@app.route("/")
+def home():
+    return "Server is running ✅"
 
 @app.route("/api/report", methods=["POST"])
 def report():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No JSON"}), 400
+    data = request.get_json(force=True)
 
-    uuid_ = data["uuid"]
-    hostname = data["hostname"]
+    uuid = data["uuid"]
+    hostname = data.get("hostname", "")
     ip = request.remote_addr
-    apps = data["apps"]
+    hardware = json.dumps(data.get("hardware", []))
+    apps = data.get("apps", [])
 
     conn = get_db()
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT OR REPLACE INTO clients (uuid, hostname, ip, last_seen)
-        VALUES (?, ?, ?, ?)
-    """, (uuid_, hostname, ip, datetime.datetime.utcnow().isoformat()))
+    INSERT INTO clients (uuid, hostname, ip, last_seen, hardware)
+    VALUES (%s,%s,%s,%s,%s)
+    ON CONFLICT (uuid) DO UPDATE SET
+        hostname=EXCLUDED.hostname,
+        ip=EXCLUDED.ip,
+        last_seen=EXCLUDED.last_seen,
+        hardware=EXCLUDED.hardware
+    """, (uuid, hostname, ip, datetime.datetime.utcnow(), hardware))
 
-    for appx in apps:
+    cur.execute("DELETE FROM reports WHERE uuid=%s", (uuid,))
+
+    for a in apps:
         cur.execute("""
-        INSERT INTO reports (uuid, app_name, version, install_date, size, ts)
-        VALUES (?, ?, ?, ?, ?, ?)
-        """, (
-            uuid_,
-            appx["name"],
-            appx["version"],
-            appx["date"],
-            appx["size"],
-            datetime.datetime.utcnow().isoformat()
-        ))
+        INSERT INTO reports (uuid, app_name, version, install_date, size)
+        VALUES (%s,%s,%s,%s,%s)
+        """, (uuid, a["name"], a["version"], a["date"], a["size"]))
 
     conn.commit()
+    cur.close()
     conn.close()
-    return jsonify({"status": "ok"})
 
+    return jsonify({"status": "ok"})
 
 @app.route("/api/clients")
 def clients():
     conn = get_db()
-    cur = conn.cursor()
-    rows = cur.execute("SELECT * FROM clients").fetchall()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+
+    cur.execute("""
+    SELECT uuid, hostname, ip, last_seen FROM clients
+    ORDER BY last_seen DESC
+    """)
+    rows = cur.fetchall()
+
+    result = []
+    for r in rows:
+        result.append({
+            "uuid": r["uuid"],
+            "hostname": r["hostname"],
+            "ip": r["ip"],
+            "last_seen": r["last_seen"].strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "Online"
+        })
+
+    cur.close()
     conn.close()
-    return jsonify([dict(r) for r in rows])
+    return jsonify(result)
 
-
-@app.route("/api/client/<uuid_>")
-def client_detail(uuid_):
+@app.route("/api/client/<uuid>")
+def client_detail(uuid):
     conn = get_db()
     cur = conn.cursor()
-    rows = cur.execute("""
-        SELECT app_name, version, install_date, size, ts
-        FROM reports WHERE uuid=?
-        ORDER BY ts DESC
-    """, (uuid_,)).fetchall()
-    conn.close()
-    return jsonify([dict(r) for r in rows])
 
+    cur.execute("SELECT hardware FROM clients WHERE uuid=%s", (uuid,))
+    row = cur.fetchone()
+    hardware = json.loads(row[0]) if row and row[0] else []
+
+    cur.execute("""
+    SELECT app_name, version, install_date, size
+    FROM reports
+    WHERE uuid=%s
+    ORDER BY ts DESC
+    """, (uuid,))
+    apps = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    return jsonify({
+        "uuid": uuid,
+        "hardware": hardware,
+        "apps": [f"{a[0]}|{a[1]}|{a[2]}|{a[3]}" for a in apps]
+    })
 
 if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
