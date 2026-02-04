@@ -1129,143 +1129,106 @@
 
 # cloud ready server
 
-import os
-import json
-import datetime
-import psycopg2
-import psycopg2.extras
-from flask import Flask, request, jsonify
+import os, json, psycopg2, datetime
+from flask import Flask, request, jsonify, render_template
 
-app = Flask(__name__)
-
-DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL not set in environment variables")
+DATABASE_URL = os.environ.get("DATABASE_URL")  # Render provides this
+app = Flask(__name__, template_folder="templates")
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def init_db():
-    conn = get_db()
-    cur = conn.cursor()
+    con = get_db()
+    cur = con.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS clients (
         uuid TEXT PRIMARY KEY,
         hostname TEXT,
-        ip TEXT,
         last_seen TIMESTAMP,
-        hardware TEXT
+        hardware JSONB
     );
     """)
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS reports (
+    CREATE TABLE IF NOT EXISTS apps (
         id SERIAL PRIMARY KEY,
         uuid TEXT,
-        app_name TEXT,
+        name TEXT,
         version TEXT,
-        install_date TEXT,
-        size TEXT,
-        ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        date TEXT,
+        size TEXT
     );
     """)
-    conn.commit()
-    cur.close()
-    conn.close()
-
-init_db()
+    con.commit()
+    con.close()
 
 @app.route("/")
-def home():
-    return "Server is running ✅"
-
-@app.route("/api/report", methods=["POST"])
-def report():
-    data = request.get_json(force=True)
-
-    uuid = data["uuid"]
-    hostname = data.get("hostname", "")
-    ip = request.remote_addr
-    hardware = json.dumps(data.get("hardware", []))
-    apps = data.get("apps", [])
-
-    conn = get_db()
-    cur = conn.cursor()
-
-    cur.execute("""
-    INSERT INTO clients (uuid, hostname, ip, last_seen, hardware)
-    VALUES (%s,%s,%s,%s,%s)
-    ON CONFLICT (uuid) DO UPDATE SET
-        hostname=EXCLUDED.hostname,
-        ip=EXCLUDED.ip,
-        last_seen=EXCLUDED.last_seen,
-        hardware=EXCLUDED.hardware
-    """, (uuid, hostname, ip, datetime.datetime.utcnow(), hardware))
-
-    cur.execute("DELETE FROM reports WHERE uuid=%s", (uuid,))
-
-    for a in apps:
-        cur.execute("""
-        INSERT INTO reports (uuid, app_name, version, install_date, size)
-        VALUES (%s,%s,%s,%s,%s)
-        """, (uuid, a["name"], a["version"], a["date"], a["size"]))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    return jsonify({"status": "ok"})
+def dashboard():
+    return render_template("dashboard.html")
 
 @app.route("/api/clients")
 def clients():
-    conn = get_db()
-    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
-
-    cur.execute("""
-    SELECT uuid, hostname, ip, last_seen FROM clients
-    ORDER BY last_seen DESC
-    """)
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT uuid, hostname, last_seen FROM clients")
     rows = cur.fetchall()
+    con.close()
 
-    result = []
-    for r in rows:
-        result.append({
-            "uuid": r["uuid"],
-            "hostname": r["hostname"],
-            "ip": r["ip"],
-            "last_seen": r["last_seen"].strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "Online"
-        })
-
-    cur.close()
-    conn.close()
-    return jsonify(result)
+    out = []
+    for u,h,t in rows:
+        status = "Online" if (datetime.datetime.utcnow()-t).seconds < 120 else "Offline"
+        out.append({"uuid":u,"hostname":h,"last_seen":str(t),"status":status})
+    return jsonify(out)
 
 @app.route("/api/client/<uuid>")
 def client_detail(uuid):
-    conn = get_db()
-    cur = conn.cursor()
+    con = get_db()
+    cur = con.cursor()
 
-    cur.execute("SELECT hardware FROM clients WHERE uuid=%s", (uuid,))
-    row = cur.fetchone()
-    hardware = json.loads(row[0]) if row and row[0] else []
+    cur.execute("SELECT hostname,last_seen,hardware FROM clients WHERE uuid=%s",(uuid,))
+    c = cur.fetchone()
 
-    cur.execute("""
-    SELECT app_name, version, install_date, size
-    FROM reports
-    WHERE uuid=%s
-    ORDER BY ts DESC
-    """, (uuid,))
+    cur.execute("SELECT name,version,date,size FROM apps WHERE uuid=%s",(uuid,))
     apps = cur.fetchall()
-
-    cur.close()
-    conn.close()
+    con.close()
 
     return jsonify({
-        "uuid": uuid,
-        "hardware": hardware,
-        "apps": [f"{a[0]}|{a[1]}|{a[2]}|{a[3]}" for a in apps]
+        "uuid":uuid,
+        "hostname":c[0],
+        "last_seen":str(c[1]),
+        "hardware":c[2],
+        "apps":[f"{a}|{b}|{d}|{s}" for a,b,d,s in apps]
     })
 
+@app.route("/api/report", methods=["POST"])
+def report():
+    data = request.json
+    uuid = data["uuid"]
+    hostname = data["hostname"]
+    hardware = data["hardware"]
+    apps = data["apps"]
+
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+    INSERT INTO clients (uuid,hostname,last_seen,hardware)
+    VALUES (%s,%s,%s,%s)
+    ON CONFLICT (uuid) DO UPDATE SET
+      hostname=EXCLUDED.hostname,
+      last_seen=EXCLUDED.last_seen,
+      hardware=EXCLUDED.hardware
+    """,(uuid,hostname,datetime.datetime.utcnow(),json.dumps(hardware)))
+
+    cur.execute("DELETE FROM apps WHERE uuid=%s",(uuid,))
+    for a in apps:
+        cur.execute("INSERT INTO apps (uuid,name,version,date,size) VALUES (%s,%s,%s,%s,%s)",
+                    (uuid,a["name"],a["date"],a["version"],str(a["size"])))
+
+    con.commit()
+    con.close()
+    return jsonify({"status":"ok"})
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    init_db()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
