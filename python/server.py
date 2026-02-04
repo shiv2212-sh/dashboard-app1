@@ -1129,119 +1129,128 @@
 
 # cloud ready server
 
-import os, json, datetime
-from flask import Flask, request, jsonify, render_template
+import os
+import uuid as uuidlib
+import datetime
 import psycopg2
 import psycopg2.extras
+from flask import Flask, request, jsonify
 
-app = Flask(__name__, template_folder="templates")
+# =========================
+# Flask App
+# =========================
+app = Flask(__name__)
 
+# =========================
+# Database
+# =========================
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def init_db():
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-            CREATE TABLE IF NOT EXISTS clients (
-                uuid TEXT PRIMARY KEY,
-                mac TEXT,
-                hostname TEXT,
-                ip TEXT,
-                last_seen TIMESTAMP,
-                hardware TEXT
-            );
+                CREATE TABLE IF NOT EXISTS clients (
+                    uuid TEXT PRIMARY KEY,
+                    mac TEXT,
+                    hostname TEXT,
+                    ip TEXT,
+                    last_seen TIMESTAMP,
+                    hardware JSONB
+                );
             """)
-
             cur.execute("""
-            CREATE TABLE IF NOT EXISTS reports (
-                id SERIAL PRIMARY KEY,
-                uuid TEXT,
-                app_name TEXT,
-                version TEXT,
-                install_date TEXT,
-                size TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+                CREATE TABLE IF NOT EXISTS reports (
+                    id SERIAL PRIMARY KEY,
+                    uuid TEXT REFERENCES clients(uuid),
+                    app_name TEXT,
+                    version TEXT,
+                    install_date TEXT,
+                    size TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
             """)
+        conn.commit()
 
-init_db()
-
-@app.route("/")
-def home():
-    return render_template("dashboard.html")
+# =========================
+# Routes
+# =========================
 
 @app.route("/api/report", methods=["POST"])
 def report():
-    data = request.get_json()
-    uuid = data["uuid"]
-    mac = data["mac"]
-    hostname = data["hostname"]
+    data = request.get_json(force=True)
+
+    uuid = data.get("uuid") or str(uuidlib.uuid4())
+    mac = data.get("mac")
+    hostname = data.get("hostname")
     ip = request.remote_addr
-    hardware = "\n".join(data.get("hardware", []))
+    hardware = data.get("hardware", {})
     apps = data.get("apps", [])
 
     with get_db() as conn:
         with conn.cursor() as cur:
+            # Upsert client
             cur.execute("""
-            INSERT INTO clients (uuid, mac, hostname, ip, last_seen, hardware)
-            VALUES (%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (uuid) DO UPDATE SET
-                mac=EXCLUDED.mac,
-                hostname=EXCLUDED.hostname,
-                ip=EXCLUDED.ip,
-                last_seen=EXCLUDED.last_seen,
-                hardware=EXCLUDED.hardware
-            """, (uuid, mac, hostname, ip, datetime.datetime.utcnow(), hardware))
+                INSERT INTO clients (uuid, mac, hostname, ip, last_seen, hardware)
+                VALUES (%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (uuid) DO UPDATE SET
+                    mac=EXCLUDED.mac,
+                    hostname=EXCLUDED.hostname,
+                    ip=EXCLUDED.ip,
+                    last_seen=EXCLUDED.last_seen,
+                    hardware=EXCLUDED.hardware;
+            """, (uuid, mac, hostname, ip, datetime.datetime.utcnow(), psycopg2.extras.Json(hardware)))
 
+            # Insert apps
             for appx in apps:
-                if isinstance(appx, str):
-                    parts = appx.split("|")
-                    if len(parts) != 4:
-                        continue
-                    name, version, date, size = parts
-                else:
-                    name = appx.get("name")
-                    version = appx.get("version")
-                    date = appx.get("date")
-                    size = appx.get("size")
-
                 cur.execute("""
-                INSERT INTO reports (uuid, app_name, version, install_date, size)
-                VALUES (%s,%s,%s,%s,%s)
-                """, (uuid, name, version, date, size))
+                    INSERT INTO reports (uuid, app_name, version, install_date, size)
+                    VALUES (%s,%s,%s,%s,%s)
+                """, (
+                    uuid,
+                    appx.get("name"),
+                    appx.get("version"),
+                    appx.get("date"),
+                    appx.get("size")
+                ))
 
-    return jsonify({"status": "ok"})
+        conn.commit()
 
-@app.route("/api/clients")
+    return jsonify({"status": "ok", "uuid": uuid})
+
+
+@app.route("/api/clients", methods=["GET"])
 def clients():
     with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM clients ORDER BY last_seen DESC")
-            return jsonify(cur.fetchall())
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
+            cur.execute("SELECT uuid, hostname, ip, last_seen FROM clients ORDER BY last_seen DESC")
+            rows = cur.fetchall()
 
-@app.route("/api/client/<uuid>")
+    return jsonify([dict(r) for r in rows])
+
+
+@app.route("/api/client/<uuid>", methods=["GET"])
 def client_detail(uuid):
     with get_db() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT * FROM clients WHERE uuid=%s", (uuid,))
-            client = cur.fetchone()
-
+        with conn.cursor(cursor_factory=psycopg2.extras.DictCursor) as cur:
             cur.execute("""
-                SELECT app_name, version, install_date, size
+                SELECT app_name, version, install_date, size, created_at
                 FROM reports
                 WHERE uuid=%s
                 ORDER BY created_at DESC
             """, (uuid,))
-            apps = cur.fetchall()
+            rows = cur.fetchall()
 
-    return jsonify({
-        "client": client,
-        "apps": apps
-    })
+    return jsonify([dict(r) for r in rows])
 
+
+# =========================
+# Main
+# =========================
 if __name__ == "__main__":
+    init_db()
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
