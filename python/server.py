@@ -1129,113 +1129,138 @@
 
 # cloud ready server
 
-from flask import Flask, request, jsonify, render_template
-import psycopg2, os, json, datetime
-from psycopg2.extras import RealDictCursor
+import os, json, datetime, psycopg2
+from flask import Flask, render_template, jsonify, request, send_file, abort
+from io import StringIO
 
 app = Flask(__name__)
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-def db():
+def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
+# ========== UI ==========
 @app.route("/")
-def home():
-    return render_template("dashboard.html")
+def index():
+    return render_template("dashboard.html")   # 👈 SERVES YOUR REAL UI
+
+# ========== API ==========
+@app.route("/api/clients")
+def api_clients():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("""
+        SELECT uuid, hostname, ip, last_seen, status
+        FROM clients
+        ORDER BY last_seen DESC
+    """)
+    rows = cur.fetchall()
+    cur.close(); db.close()
+
+    out = []
+    for r in rows:
+        out.append({
+            "uuid": r[0],
+            "hostname": r[1],
+            "ip": r[2],
+            "last_seen": r[3].strftime("%a, %d %b %Y %H:%M:%S GMT"),
+            "status": r[4]
+        })
+    return jsonify(out)
+
+@app.route("/api/client/<uuid>")
+def api_client(uuid):
+    db = get_db()
+    cur = db.cursor()
+
+    cur.execute("SELECT uuid, hostname, hardware FROM clients WHERE uuid=%s", (uuid,))
+    row = cur.fetchone()
+    if not row:
+        abort(404)
+
+    hardware = row[2] or []
+    if isinstance(hardware, str):
+        hardware = json.loads(hardware)
+
+    cur.execute("""
+        SELECT app_name, version, install_date, size
+        FROM reports WHERE uuid=%s ORDER BY install_date DESC
+    """, (uuid,))
+    apps = cur.fetchall()
+
+    cur.close(); db.close()
+
+    return jsonify({
+        "uuid": row[0],
+        "hostname": row[1],
+        "hardware": hardware,
+        "apps": [f"{a[0]}|{a[1]}|{a[2]}|{a[3]}" for a in apps]
+    })
 
 @app.route("/api/report", methods=["POST"])
 def report():
     data = request.json
-    uuid = data["uuid"]
+    uuid_ = data["uuid"]
     hostname = data["hostname"]
-    hardware = data["hardware"]
-    apps = data["apps"]
+    ip = request.remote_addr
+    hardware = data.get("hardware", [])
+    apps = data.get("apps", [])
 
-    conn = db()
-    cur = conn.cursor()
+    db = get_db()
+    cur = db.cursor()
 
-    # Upsert client
     cur.execute("""
-    INSERT INTO clients (uuid, hostname, last_seen, status, hardware)
-    VALUES (%s,%s,%s,%s,%s)
-    ON CONFLICT (uuid) DO UPDATE SET
-      hostname=EXCLUDED.hostname,
-      last_seen=EXCLUDED.last_seen,
-      status=EXCLUDED.status,
-      hardware=EXCLUDED.hardware
-    """, (uuid, hostname, datetime.datetime.now(datetime.UTC), "Online", json.dumps(hardware)))
-
-    # Fetch old apps
-    cur.execute("SELECT app_name, version FROM reports WHERE uuid=%s", (uuid,))
-    old = {r[0]: r[1] for r in cur.fetchall()}
-
-    cur.execute("DELETE FROM reports WHERE uuid=%s", (uuid,))
+        INSERT INTO clients (uuid, hostname, ip, last_seen, status, hardware)
+        VALUES (%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (uuid) DO UPDATE SET
+            hostname=EXCLUDED.hostname,
+            ip=EXCLUDED.ip,
+            last_seen=EXCLUDED.last_seen,
+            status=EXCLUDED.status,
+            hardware=EXCLUDED.hardware
+    """, (uuid_, hostname, ip, datetime.datetime.utcnow(), "Online", json.dumps(hardware)))
 
     for a in apps:
-        name, ver = a["name"], a["version"]
-
-        if name not in old:
-            cur.execute("INSERT INTO app_history (uuid, app_name, action, new_version) VALUES (%s,%s,%s,%s)",
-                        (uuid, name, "Installed", ver))
-        elif old[name] != ver:
-            cur.execute("INSERT INTO app_history (uuid, app_name, action, old_version, new_version) VALUES (%s,%s,%s,%s,%s)",
-                        (uuid, name, "Updated", old[name], ver))
-
         cur.execute("""
-        INSERT INTO reports (uuid, app_name, version, install_date, size)
-        VALUES (%s,%s,%s,%s,%s)
-        """, (uuid, name, ver, a["date"], a["size"]))
+            INSERT INTO reports (uuid, app_name, version, install_date, size)
+            VALUES (%s,%s,%s,%s,%s)
+        """, (uuid_, a["name"], a["version"], a["date"], a["size"]))
 
-    for removed in set(old) - {a["name"] for a in apps}:
-        cur.execute("INSERT INTO app_history (uuid, app_name, action, old_version) VALUES (%s,%s,%s,%s)",
-                    (uuid, removed, "Removed", old[removed]))
-
-    conn.commit()
-    conn.close()
+    db.commit()
+    cur.close(); db.close()
     return jsonify({"ok": True})
 
-@app.route("/api/clients")
-def clients():
-    conn = db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("SELECT uuid, hostname, status, last_seen FROM clients ORDER BY last_seen DESC")
+# ========== EXPORT ==========
+@app.route("/export/csv")
+def export_csv():
+    db = get_db()
+    cur = db.cursor()
+    cur.execute("SELECT uuid, hostname, ip, last_seen, status FROM clients")
     rows = cur.fetchall()
-    conn.close()
-    return jsonify(rows)
+    cur.close(); db.close()
 
-@app.route("/api/client/<uuid>")
-def client(uuid):
-    conn = db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
+    si = StringIO()
+    si.write("uuid,hostname,ip,last_seen,status\n")
+    for r in rows:
+        si.write(",".join(str(x) for x in r) + "\n")
 
-    cur.execute("SELECT * FROM clients WHERE uuid=%s", (uuid,))
-    c = cur.fetchone()
+    return send_file(
+        StringIO(si.getvalue()),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name="clients.csv"
+    )
 
-    cur.execute("SELECT app_name, version, install_date, size FROM reports WHERE uuid=%s", (uuid,))
-    apps = cur.fetchall()
+@app.route("/export/pdf/<uuid>")
+def export_pdf(uuid):
+    return f"PDF export for {uuid} (implement later)"
 
-    conn.close()
+@app.route("/shutdown", methods=["POST"])
+def shutdown():
+    os._exit(0)
 
-    return jsonify({
-        "uuid": c["uuid"],
-        "hostname": c["hostname"],
-        "hardware": c["hardware"],
-        "apps": [f"{a['app_name']}|{a['version']}|{a['install_date']}|{a['size']}" for a in apps]
-    })
-
-@app.route("/api/history/<uuid>/<app>")
-def history(uuid, app):
-    conn = db()
-    cur = conn.cursor(cursor_factory=RealDictCursor)
-    cur.execute("""
-    SELECT ts, action, old_version, new_version
-    FROM app_history
-    WHERE uuid=%s AND app_name=%s
-    ORDER BY ts DESC
-    """, (uuid, app))
-    rows = cur.fetchall()
-    conn.close()
-    return jsonify(rows)
-
+# ========== MAIN ==========
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
