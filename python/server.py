@@ -1134,6 +1134,8 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import Flask, request, jsonify, render_template
 
+print("DB URL USED BY SERVER:", os.environ.get("DATABASE_URL"))
+
 app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
