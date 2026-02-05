@@ -1129,70 +1129,74 @@
 
 # cloud ready server
 
-import os, json, psycopg2, datetime
-from flask import Flask, render_template, request, jsonify
+import os
+import json
+import datetime
+import psycopg2
+from flask import Flask, render_template, jsonify, request
 
-app = Flask(__name__)
-DB = os.environ["DATABASE_URL"]
+app = Flask(__name__, static_folder="static", template_folder="templates")
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
-    return psycopg2.connect(DB, sslmode="require")
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 @app.route("/")
 def index():
     return render_template("dashboard.html")
 
 @app.route("/api/clients")
-def clients():
-    con = get_db(); cur = con.cursor()
-    cur.execute("SELECT uuid,hostname,ip,last_seen,status FROM clients")
+def get_clients():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT uuid, hostname, ip, last_seen, status
+        FROM clients
+        ORDER BY last_seen DESC
+    """)
     rows = cur.fetchall()
-    con.close()
-    return jsonify([{
-        "uuid":r[0],"hostname":r[1],"ip":r[2],
-        "last_seen":str(r[3]),"status":r[4]
-    } for r in rows])
+    cur.close()
+    conn.close()
 
-@app.route("/api/client/<uuid>")
-def client(uuid):
-    con = get_db(); cur = con.cursor()
-    cur.execute("SELECT hardware FROM clients WHERE uuid=%s",(uuid,))
-    hw = cur.fetchone()[0]
-    cur.execute("SELECT app_name,version,install_date,size FROM reports WHERE uuid=%s",(uuid,))
-    apps = ["|".join(map(str,a)) for a in cur.fetchall()]
-    con.close()
-    return jsonify({"uuid":uuid,"hardware":hw,"apps":apps})
+    data = []
+    for r in rows:
+        data.append({
+            "uuid": r[0],
+            "hostname": r[1],
+            "ip": r[2],
+            "last_seen": r[3].isoformat() if r[3] else None,
+            "status": r[4]
+        })
+
+    return jsonify(data)
 
 @app.route("/api/report", methods=["POST"])
 def report():
-    d = request.json
-    con = get_db(); cur = con.cursor()
+    data = request.json
+    conn = get_db()
+    cur = conn.cursor()
 
     cur.execute("""
-    INSERT INTO clients(uuid,hostname,ip,last_seen,status,hardware)
-    VALUES(%s,%s,%s,%s,%s,%s)
-    ON CONFLICT(uuid) DO UPDATE SET
-      hostname=EXCLUDED.hostname,
-      ip=EXCLUDED.ip,
-      last_seen=EXCLUDED.last_seen,
-      status=EXCLUDED.status,
-      hardware=EXCLUDED.hardware
-    """,(d["uuid"],d["hostname"],d["ip"],
-         datetime.datetime.utcnow(),"Online",
-         json.dumps(d["hardware"])))
+        INSERT INTO clients (uuid, hostname, ip, last_seen, status)
+        VALUES (%s,%s,%s,%s,%s)
+        ON CONFLICT (uuid) DO UPDATE SET
+        hostname=EXCLUDED.hostname,
+        ip=EXCLUDED.ip,
+        last_seen=EXCLUDED.last_seen,
+        status=EXCLUDED.status
+    """, (
+        data["uuid"],
+        data["hostname"],
+        data["ip"],
+        datetime.datetime.now(datetime.UTC),
+        "Online"
+    ))
 
-    cur.execute("DELETE FROM reports WHERE uuid=%s",(d["uuid"],))
-    for a in d["apps"]:
-        cur.execute("""INSERT INTO reports(uuid,app_name,version,install_date,size)
-        VALUES(%s,%s,%s,%s,%s)""",
-        (d["uuid"],a["name"],a["version"],a["date"],a["size"]))
-
-    con.commit(); con.close()
-    return jsonify({"status":"ok"})
-
-@app.route("/shutdown", methods=["POST"])
-def shutdown():
-    os._exit(0)
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"ok": True}
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))

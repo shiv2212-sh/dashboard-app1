@@ -570,14 +570,29 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Client Dashboard</title>
-  <link rel="stylesheet" href="/static/style.css">
+    <title>Client Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body class="dark">
+<body>
+
 <h1>Dashboard</h1>
 
-<table id="clients"></table>
+<button onclick="toggleTheme()">🌙 Dark Mode</button>
+<button onclick="loadClients()">🔄 Refresh</button>
 
-<script src="/static/dashboard.js"></script>
+<table id="clientTable">
+    <thead>
+        <tr>
+            <th>Status</th>
+            <th>UUID</th>
+            <th>Hostname</th>
+            <th>IP</th>
+            <th>Last Seen</th>
+        </tr>
+    </thead>
+    <tbody></tbody>
+</table>
+
+<script src="{{ url_for('static', filename='dashboard.js') }}"></script>
 </body>
 </html>
