@@ -1129,112 +1129,70 @@
 
 # cloud ready server
 
-import os, json, datetime, psycopg2
-from flask import Flask, render_template, jsonify, request, send_file, abort
-from io import StringIO
+import os, json, psycopg2, datetime
+from flask import Flask, render_template, request, jsonify
 
 app = Flask(__name__)
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DB = os.environ["DATABASE_URL"]
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg2.connect(DB, sslmode="require")
 
 @app.route("/")
 def index():
     return render_template("dashboard.html")
 
-# ========== CLIENT LIST ==========
 @app.route("/api/clients")
-def api_clients():
-    db = get_db(); cur = db.cursor()
-    cur.execute("SELECT uuid, hostname, ip, last_seen, status FROM clients ORDER BY last_seen DESC")
+def clients():
+    con = get_db(); cur = con.cursor()
+    cur.execute("SELECT uuid,hostname,ip,last_seen,status FROM clients")
     rows = cur.fetchall()
-    cur.close(); db.close()
-
-    now = datetime.datetime.utcnow()
-    out = []
-    for r in rows:
-        status = "Online" if (now - r[3]).seconds < 180 else "Offline"
-        out.append({
-            "uuid": r[0],
-            "hostname": r[1],
-            "ip": r[2],
-            "last_seen": r[3].strftime("%Y-%m-%d %H:%M:%S"),
-            "status": status
-        })
-    return jsonify(out)
-
-# ========== CLIENT DETAIL ==========
-@app.route("/api/client/<uuid>")
-def api_client(uuid):
-    db = get_db(); cur = db.cursor()
-    cur.execute("SELECT uuid, hostname, hardware FROM clients WHERE uuid=%s", (uuid,))
-    row = cur.fetchone()
-    if not row: abort(404)
-
-    cur.execute("""
-        SELECT app_name, version, install_date, size
-        FROM reports WHERE uuid=%s ORDER BY install_date DESC
-    """, (uuid,))
-    apps = cur.fetchall()
-    cur.close(); db.close()
-
-    return jsonify({
-        "uuid": row[0],
-        "hostname": row[1],
-        "hardware": json.loads(row[2]),
-        "apps": [f"{a[0]}|{a[1]}|{a[2]}|{a[3]}" for a in apps]
-    })
-
-# ========== HISTORY ==========
-@app.route("/api/history/<uuid>/<app>")
-def api_history(uuid, app):
-    db = get_db(); cur = db.cursor()
-    cur.execute("""
-        SELECT ts, action, old_version, new_version
-        FROM history WHERE uuid=%s AND app_name=%s ORDER BY ts DESC
-    """, (uuid, app))
-    rows = cur.fetchall()
-    cur.close(); db.close()
-
+    con.close()
     return jsonify([{
-        "ts": r[0].strftime("%Y-%m-%d %H:%M:%S"),
-        "action": r[1],
-        "old_version": r[2],
-        "new_version": r[3]
+        "uuid":r[0],"hostname":r[1],"ip":r[2],
+        "last_seen":str(r[3]),"status":r[4]
     } for r in rows])
 
-# ========== REPORT ==========
+@app.route("/api/client/<uuid>")
+def client(uuid):
+    con = get_db(); cur = con.cursor()
+    cur.execute("SELECT hardware FROM clients WHERE uuid=%s",(uuid,))
+    hw = cur.fetchone()[0]
+    cur.execute("SELECT app_name,version,install_date,size FROM reports WHERE uuid=%s",(uuid,))
+    apps = ["|".join(map(str,a)) for a in cur.fetchall()]
+    con.close()
+    return jsonify({"uuid":uuid,"hardware":hw,"apps":apps})
+
 @app.route("/api/report", methods=["POST"])
 def report():
-    data = request.json
-    uuid_, hostname = data["uuid"], data["hostname"]
-    ip = request.remote_addr
-    hardware = json.dumps(data.get("hardware", []))
-    apps = data.get("apps", [])
-
-    db = get_db(); cur = db.cursor()
+    d = request.json
+    con = get_db(); cur = con.cursor()
 
     cur.execute("""
-        INSERT INTO clients (uuid, hostname, ip, last_seen, status, hardware)
-        VALUES (%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (uuid) DO UPDATE SET
-        hostname=EXCLUDED.hostname,
-        ip=EXCLUDED.ip,
-        last_seen=EXCLUDED.last_seen,
-        status=EXCLUDED.status,
-        hardware=EXCLUDED.hardware
-    """, (uuid_, hostname, ip, datetime.datetime.utcnow(), "Online", hardware))
+    INSERT INTO clients(uuid,hostname,ip,last_seen,status,hardware)
+    VALUES(%s,%s,%s,%s,%s,%s)
+    ON CONFLICT(uuid) DO UPDATE SET
+      hostname=EXCLUDED.hostname,
+      ip=EXCLUDED.ip,
+      last_seen=EXCLUDED.last_seen,
+      status=EXCLUDED.status,
+      hardware=EXCLUDED.hardware
+    """,(d["uuid"],d["hostname"],d["ip"],
+         datetime.datetime.utcnow(),"Online",
+         json.dumps(d["hardware"])))
 
-    for a in apps:
-        cur.execute("""
-            INSERT INTO reports (uuid, app_name, version, install_date, size)
-            VALUES (%s,%s,%s,%s,%s)
-        """, (uuid_, a["name"], a["version"], a["date"], a["size"]))
+    cur.execute("DELETE FROM reports WHERE uuid=%s",(d["uuid"],))
+    for a in d["apps"]:
+        cur.execute("""INSERT INTO reports(uuid,app_name,version,install_date,size)
+        VALUES(%s,%s,%s,%s,%s)""",
+        (d["uuid"],a["name"],a["version"],a["date"],a["size"]))
 
-    db.commit()
-    cur.close(); db.close()
-    return jsonify({"ok": True})
+    con.commit(); con.close()
+    return jsonify({"status":"ok"})
+
+@app.route("/shutdown", methods=["POST"])
+def shutdown():
+    os._exit(0)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",5000)))

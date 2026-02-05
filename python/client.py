@@ -847,74 +847,26 @@
 
 
 
-import requests
-import socket
-import uuid
-import platform
-import psutil
-import time
-import json
-import os
+import platform, socket, uuid, requests, json
 
-# ==========================
-# CONFIG
-# ==========================
-SERVER = "https://dashboard-app1.onrender.com/api/report"
-CLIENT_ID_FILE = "client_id.txt"
-INTERVAL = 60  # seconds
+SERVER = "https://dashboard-app1.onrender.com"
 
-# ==========================
-# PERSISTENT UUID
-# ==========================
-def get_uuid():
-    if os.path.exists(CLIENT_ID_FILE):
-        return open(CLIENT_ID_FILE).read().strip()
-    else:
-        u = str(uuid.uuid4())
-        with open(CLIENT_ID_FILE, "w") as f:
-            f.write(u)
-        return u
-
-# ==========================
-# COLLECT DATA
-# ==========================
-def collect():
-    apps = [
-        {"name": "Chrome", "version": "120", "date": "2025-01-01", "size": 200},
-        {"name": "Python", "version": "3.12", "date": "2025-01-02", "size": 150}
-    ]
-
-    data = {
-        "uuid": get_uuid(),
-        "hostname": socket.gethostname(),
-        "hardware": [
-            platform.system(),
-            platform.machine(),
-            f"{psutil.cpu_count()} cores"
-        ],
-        "apps": apps
+def get_info():
+    return {
+      "uuid":str(uuid.getnode()),
+      "hostname":platform.node(),
+      "ip":socket.gethostbyname(socket.gethostname()),
+      "hardware":[platform.system(),platform.processor(),platform.machine()],
+      "apps":[
+         {"name":"ExampleApp","version":"1.0","date":"2024","size":"25MB"}
+      ]
     }
-    return data
 
-# ==========================
-# MAIN LOOP
-# ==========================
-print("🚀 Client Agent Started")
-print("📡 Server:", SERVER)
+print(f"Connecting to {SERVER}")
+input("Press ENTER to send system info...")
 
-while True:
-    data = collect()
+data = get_info()
+r = requests.post(f"{SERVER}/api/report", json=data)
 
-    print("\n==============================")
-    print("📤 Sending report to:", SERVER)
-    print("🧾 Payload:")
-    print(json.dumps(data, indent=2))
-
-    try:
-        r = requests.post(SERVER, json=data, timeout=10)
-        print("✔ Server Response Code:", r.status_code)
-        print("📨 Server Response Body:", r.text)
-    except Exception as e:
-        print("✖ Error sending data:", e)
-
-    time.sleep(INTERVAL)
+print("Data sent successfully.")
+input("Press ENTER to exit...")

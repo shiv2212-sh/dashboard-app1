@@ -1,0 +1,14 @@
+body.dark {
+  background: #0f0f0f;
+  color: white;
+  font-family: Arial;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+td, th {
+  border: 1px solid #333;
+  padding: 8px;
+}
+.online { color: #00ff00; }
