@@ -786,39 +786,88 @@
 
 
 
+#
+# import uuid, socket, requests, json, platform, subprocess
+#
+# SERVER_URL = "https://dashboard-app1.onrender.com/api/report"
+#
+# def get_apps():
+#     apps = []
+#     try:
+#         if platform.system() == "Windows":
+#             out = subprocess.check_output("wmic product get name,version", shell=True, text=True)
+#             for line in out.splitlines()[1:]:
+#                 if line.strip():
+#                     parts = line.split()
+#                     apps.append({
+#                         "name": parts[0],
+#                         "version": parts[-1],
+#                         "date": "unknown",
+#                         "size": 0
+#                     })
+#         else:
+#             out = subprocess.check_output("dpkg-query -W -f='${Package} ${Version}\n'", shell=True, text=True)
+#             for line in out.splitlines():
+#                 p,v = line.split()
+#                 apps.append({"name":p,"version":v,"date":"unknown","size":0})
+#     except:
+#         pass
+#     return apps[:50]  # limit for safety
+#
+# def main():
+#     payload = {
+#         "uuid": str(uuid.getnode()),
+#         "hostname": socket.gethostname(),
+#         "hardware": {
+#             "os": platform.system(),
+#             "release": platform.release(),
+#             "cpu": platform.processor()
+#         },
+#         "apps": get_apps()
+#     }
+#
+#     print("Connecting to", SERVER_URL)
+#     r = requests.post(SERVER_URL, json=payload, timeout=20)
+#     print("Server replied:", r.status_code, r.text)
+#
+# if __name__ == "__main__":
+#     main()
 
-import requests, socket, uuid, json, datetime, platform
-
-SERVER_URL = "https://dashboard-app1.onrender.com/api/report"
 
 
-def get_apps():
-    # Example static data – replace with real scanner later
-    return [
-        {"name": "Chrome", "version": "121.0", "date": "2024-12-01", "size": "350MB"},
-        {"name": "VS Code", "version": "1.86", "date": "2025-01-10", "size": "280MB"}
+
+
+
+
+
+
+
+
+
+
+
+
+import requests, socket, uuid, platform, psutil, time
+
+SERVER = "https://dashboard-app1.onrender.com/api/report"
+
+def collect():
+    apps = [
+        {"name":"Chrome","version":"120","date":"2025-01-01","size":"200MB"},
+        {"name":"Python","version":"3.12","date":"2025-01-02","size":"150MB"}
     ]
 
-
-def main():
-    uid = str(uuid.getnode())
-    hostname = socket.gethostname()
-
-    payload = {
-        "uuid": uid,
-        "hostname": hostname,
-        "apps": get_apps()
+    return {
+        "uuid": str(uuid.getnode()),
+        "hostname": socket.gethostname(),
+        "hardware": [platform.system(), platform.machine(), f"{psutil.cpu_count()} cores"],
+        "apps": apps
     }
 
-    print(f"Connecting to {SERVER_URL} ...")
+while True:
     try:
-        r = requests.post(SERVER_URL, json=payload, timeout=10)
-        print("Server replied:", r.text)
+        requests.post(SERVER, json=collect(), timeout=10)
+        print("✔ Report sent")
     except Exception as e:
-        print("Connection failed:", e)
-
-    input("\nPress Enter to exit...")
-
-
-if __name__ == "__main__":
-    main()
+        print("✖", e)
+    time.sleep(60)
