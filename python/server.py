@@ -1134,92 +1134,97 @@ from flask import Flask, render_template, jsonify, request, send_file, abort
 from io import StringIO
 
 app = Flask(__name__)
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
-# ========== UI ==========
 @app.route("/")
 def index():
-    return render_template("dashboard.html")   # 👈 SERVES YOUR REAL UI
+    return render_template("dashboard.html")
 
-# ========== API ==========
+# ========== CLIENT LIST ==========
 @app.route("/api/clients")
 def api_clients():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        SELECT uuid, hostname, ip, last_seen, status
-        FROM clients
-        ORDER BY last_seen DESC
-    """)
+    db = get_db(); cur = db.cursor()
+    cur.execute("SELECT uuid, hostname, ip, last_seen, status FROM clients ORDER BY last_seen DESC")
     rows = cur.fetchall()
     cur.close(); db.close()
 
+    now = datetime.datetime.utcnow()
     out = []
     for r in rows:
+        status = "Online" if (now - r[3]).seconds < 180 else "Offline"
         out.append({
             "uuid": r[0],
             "hostname": r[1],
             "ip": r[2],
-            "last_seen": r[3].strftime("%a, %d %b %Y %H:%M:%S GMT"),
-            "status": r[4]
+            "last_seen": r[3].strftime("%Y-%m-%d %H:%M:%S"),
+            "status": status
         })
     return jsonify(out)
 
+# ========== CLIENT DETAIL ==========
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
-    db = get_db()
-    cur = db.cursor()
-
+    db = get_db(); cur = db.cursor()
     cur.execute("SELECT uuid, hostname, hardware FROM clients WHERE uuid=%s", (uuid,))
     row = cur.fetchone()
-    if not row:
-        abort(404)
-
-    hardware = row[2] or []
-    if isinstance(hardware, str):
-        hardware = json.loads(hardware)
+    if not row: abort(404)
 
     cur.execute("""
         SELECT app_name, version, install_date, size
         FROM reports WHERE uuid=%s ORDER BY install_date DESC
     """, (uuid,))
     apps = cur.fetchall()
-
     cur.close(); db.close()
 
     return jsonify({
         "uuid": row[0],
         "hostname": row[1],
-        "hardware": hardware,
+        "hardware": json.loads(row[2]),
         "apps": [f"{a[0]}|{a[1]}|{a[2]}|{a[3]}" for a in apps]
     })
 
+# ========== HISTORY ==========
+@app.route("/api/history/<uuid>/<app>")
+def api_history(uuid, app):
+    db = get_db(); cur = db.cursor()
+    cur.execute("""
+        SELECT ts, action, old_version, new_version
+        FROM history WHERE uuid=%s AND app_name=%s ORDER BY ts DESC
+    """, (uuid, app))
+    rows = cur.fetchall()
+    cur.close(); db.close()
+
+    return jsonify([{
+        "ts": r[0].strftime("%Y-%m-%d %H:%M:%S"),
+        "action": r[1],
+        "old_version": r[2],
+        "new_version": r[3]
+    } for r in rows])
+
+# ========== REPORT ==========
 @app.route("/api/report", methods=["POST"])
 def report():
     data = request.json
-    uuid_ = data["uuid"]
-    hostname = data["hostname"]
+    uuid_, hostname = data["uuid"], data["hostname"]
     ip = request.remote_addr
-    hardware = data.get("hardware", [])
+    hardware = json.dumps(data.get("hardware", []))
     apps = data.get("apps", [])
 
-    db = get_db()
-    cur = db.cursor()
+    db = get_db(); cur = db.cursor()
 
     cur.execute("""
         INSERT INTO clients (uuid, hostname, ip, last_seen, status, hardware)
         VALUES (%s,%s,%s,%s,%s,%s)
         ON CONFLICT (uuid) DO UPDATE SET
-            hostname=EXCLUDED.hostname,
-            ip=EXCLUDED.ip,
-            last_seen=EXCLUDED.last_seen,
-            status=EXCLUDED.status,
-            hardware=EXCLUDED.hardware
-    """, (uuid_, hostname, ip, datetime.datetime.utcnow(), "Online", json.dumps(hardware)))
+        hostname=EXCLUDED.hostname,
+        ip=EXCLUDED.ip,
+        last_seen=EXCLUDED.last_seen,
+        status=EXCLUDED.status,
+        hardware=EXCLUDED.hardware
+    """, (uuid_, hostname, ip, datetime.datetime.utcnow(), "Online", hardware))
 
     for a in apps:
         cur.execute("""
@@ -1231,36 +1236,5 @@ def report():
     cur.close(); db.close()
     return jsonify({"ok": True})
 
-# ========== EXPORT ==========
-@app.route("/export/csv")
-def export_csv():
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("SELECT uuid, hostname, ip, last_seen, status FROM clients")
-    rows = cur.fetchall()
-    cur.close(); db.close()
-
-    si = StringIO()
-    si.write("uuid,hostname,ip,last_seen,status\n")
-    for r in rows:
-        si.write(",".join(str(x) for x in r) + "\n")
-
-    return send_file(
-        StringIO(si.getvalue()),
-        mimetype="text/csv",
-        as_attachment=True,
-        download_name="clients.csv"
-    )
-
-@app.route("/export/pdf/<uuid>")
-def export_pdf(uuid):
-    return f"PDF export for {uuid} (implement later)"
-
-@app.route("/shutdown", methods=["POST"])
-def shutdown():
-    os._exit(0)
-
-# ========== MAIN ==========
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))

@@ -572,78 +572,147 @@
 <head>
 <meta charset="utf-8">
 <title>Client Dashboard</title>
+
 <style>
-:root{--bg:#fff;--text:#000;--table:#fff;--border:#ddd;--head:#f4f4f4;--btn:#e0e0e0}
-body.dark{--bg:#121212;--text:#eee;--table:#1e1e1e;--border:#333;--head:#2a2a2a;--btn:#333}
-body{font-family:Arial;padding:20px;background:var(--bg);color:var(--text)}
+:root{
+  --bg:#fff;--text:#000;--table:#fff;--border:#ddd;--head:#f4f4f4;--btn:#e0e0e0
+}
+body.dark{
+  --bg:#121212;--text:#eee;--table:#1e1e1e;--border:#333;--head:#2a2a2a;--btn:#333
+}
+body{
+  font-family:Arial;padding:20px;background:var(--bg);color:var(--text)
+}
 table{width:100%;border-collapse:collapse;background:var(--table)}
 th,td{border:1px solid var(--border);padding:8px}
 th{background:var(--head)}
 .hidden{display:none}
 .online{color:limegreen;font-weight:bold}
 .offline{color:crimson;font-weight:bold}
+button{background:var(--btn);border:1px solid var(--border);padding:6px 10px;cursor:pointer;margin-right:6px}
 </style>
 </head>
-<body>
 
-<h1>Dashboard</h1>
-<div id="list">
+<body>
+<h1>Client Dashboard</h1>
+
+<button onclick="toggleTheme()">🌓 Theme</button>
 <button onclick="load()">🔄 Refresh</button>
+<button onclick="exportCSV()">⬇ Export CSV</button>
+
+<hr>
+
+<div id="list">
 <table>
-<tr><th>Status</th><th>UUID</th><th>Hostname</th><th>Last Seen</th><th>View</th></tr>
+<tr>
+  <th>Status</th>
+  <th>UUID</th>
+  <th>Hostname</th>
+  <th>Last Seen</th>
+  <th>View</th>
+</tr>
 <tbody id="body"></tbody>
 </table>
 </div>
 
 <div id="details" class="hidden">
 <button onclick="goBack()">⬅ Back</button>
+<span id="pdfBtn"></span>
 <div id="info"></div>
 </div>
 
 <script>
-async function load(){
- const r=await fetch("/api/clients")
- clients=await r.json()
- body.innerHTML=clients.map(c=>`
- <tr>
- <td class="${c.status.toLowerCase()}">${c.status}</td>
- <td>${c.uuid}</td>
- <td>${c.hostname}</td>
- <td>${c.last_seen}</td>
- <td><button onclick="view('${c.uuid}')">View</button></td>
- </tr>`).join("")
+const body = document.getElementById("body")
+const list = document.getElementById("list")
+const details = document.getElementById("details")
+const info = document.getElementById("info")
+const pdfBtn = document.getElementById("pdfBtn")
+
+function toggleTheme(){
+  document.body.classList.toggle("dark")
 }
 
-async function view(u){
- const r=await fetch(`/api/client/${u}`)
- const c=await r.json()
- list.classList.add("hidden")
- details.classList.remove("hidden")
+async function load(){
+  const r = await fetch("/api/clients")
+  const clients = await r.json()
 
- let rows=c.apps.map(a=>{
- let [p,v,d,s]=a.split("|")
- return `<tr><td>${p}</td><td>${v}</td><td>${d}</td><td>${s}</td>
- <td><button onclick="history('${u}','${p}')">History</button></td></tr>`
- }).join("")
+  body.innerHTML = clients.map(c=>`
+    <tr>
+      <td class="${c.status.toLowerCase()}">${c.status}</td>
+      <td>${c.uuid}</td>
+      <td>${c.hostname}</td>
+      <td>${c.last_seen}</td>
+      <td><button onclick="view('${c.uuid}','${c.hostname}')">View</button></td>
+    </tr>
+  `).join("")
+}
 
- info.innerHTML=`
- <b>${c.hostname}</b><br>
- <h3>Apps</h3>
- <table><tr><th>Name</th><th>Version</th><th>Date</th><th>Size</th><th>Changes</th></tr>${rows}</table>`
+async function view(u, h){
+  const r = await fetch(`/api/client/${u}`)
+  const c = await r.json()
+
+  list.classList.add("hidden")
+  details.classList.remove("hidden")
+
+  pdfBtn.innerHTML = `<button onclick="exportPDF('${u}')">⬇ Export PDF (${h})</button>`
+
+  let rows = c.apps.map(a=>{
+    let [p,v,d,s] = a.split("|")
+    return `
+      <tr>
+        <td>${p}</td>
+        <td>${v}</td>
+        <td>${d}</td>
+        <td>${s}</td>
+        <td><button onclick="history('${u}','${p}')">History</button></td>
+      </tr>
+    `
+  }).join("")
+
+  info.innerHTML = `
+    <h2>${c.hostname}</h2>
+    <h3>Installed Apps</h3>
+    <table>
+      <tr><th>Name</th><th>Version</th><th>Date</th><th>Size</th><th>Changes</th></tr>
+      ${rows}
+    </table>
+  `
 }
 
 async function history(u,a){
- const r=await fetch(`/api/history/${u}/${a}`)
- const h=await r.json()
- info.innerHTML+=`
- <h3>History: ${a}</h3>
- <table>
- <tr><th>Time</th><th>Action</th><th>Old</th><th>New</th></tr>
- ${h.map(x=>`<tr><td>${x.ts}</td><td>${x.action}</td><td>${x.old_version||""}</td><td>${x.new_version||""}</td></tr>`).join("")}
- </table>`
+  const r = await fetch(`/api/history/${u}/${a}`)
+  const h = await r.json()
+
+  info.innerHTML += `
+    <h3>History: ${a}</h3>
+    <table>
+      <tr><th>Time</th><th>Action</th><th>Old</th><th>New</th></tr>
+      ${h.map(x=>`
+        <tr>
+          <td>${x.ts}</td>
+          <td>${x.action}</td>
+          <td>${x.old_version || ""}</td>
+          <td>${x.new_version || ""}</td>
+        </tr>
+      `).join("")}
+    </table>
+  `
 }
 
-function goBack(){details.classList.add("hidden");list.classList.remove("hidden")}
+function goBack(){
+  details.classList.add("hidden")
+  list.classList.remove("hidden")
+  pdfBtn.innerHTML = ""
+}
+
+function exportCSV(){
+  window.location = "/export/csv"
+}
+
+function exportPDF(uuid){
+  window.location = `/export/pdf/${uuid}`
+}
+
 load()
 </script>
 </body>

@@ -847,27 +847,74 @@
 
 
 
-import requests, socket, uuid, platform, psutil, time
+import requests
+import socket
+import uuid
+import platform
+import psutil
+import time
+import json
+import os
 
+# ==========================
+# CONFIG
+# ==========================
 SERVER = "https://dashboard-app1.onrender.com/api/report"
+CLIENT_ID_FILE = "client_id.txt"
+INTERVAL = 60  # seconds
 
+# ==========================
+# PERSISTENT UUID
+# ==========================
+def get_uuid():
+    if os.path.exists(CLIENT_ID_FILE):
+        return open(CLIENT_ID_FILE).read().strip()
+    else:
+        u = str(uuid.uuid4())
+        with open(CLIENT_ID_FILE, "w") as f:
+            f.write(u)
+        return u
+
+# ==========================
+# COLLECT DATA
+# ==========================
 def collect():
     apps = [
-        {"name":"Chrome","version":"120","date":"2025-01-01","size":"200MB"},
-        {"name":"Python","version":"3.12","date":"2025-01-02","size":"150MB"}
+        {"name": "Chrome", "version": "120", "date": "2025-01-01", "size": 200},
+        {"name": "Python", "version": "3.12", "date": "2025-01-02", "size": 150}
     ]
 
-    return {
-        "uuid": str(uuid.getnode()),
+    data = {
+        "uuid": get_uuid(),
         "hostname": socket.gethostname(),
-        "hardware": [platform.system(), platform.machine(), f"{psutil.cpu_count()} cores"],
+        "hardware": [
+            platform.system(),
+            platform.machine(),
+            f"{psutil.cpu_count()} cores"
+        ],
         "apps": apps
     }
+    return data
+
+# ==========================
+# MAIN LOOP
+# ==========================
+print("🚀 Client Agent Started")
+print("📡 Server:", SERVER)
 
 while True:
+    data = collect()
+
+    print("\n==============================")
+    print("📤 Sending report to:", SERVER)
+    print("🧾 Payload:")
+    print(json.dumps(data, indent=2))
+
     try:
-        requests.post(SERVER, json=collect(), timeout=10)
-        print("✔ Report sent")
+        r = requests.post(SERVER, json=data, timeout=10)
+        print("✔ Server Response Code:", r.status_code)
+        print("📨 Server Response Body:", r.text)
     except Exception as e:
-        print("✖", e)
-    time.sleep(60)
+        print("✖ Error sending data:", e)
+
+    time.sleep(INTERVAL)
