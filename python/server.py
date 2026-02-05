@@ -1131,11 +1131,17 @@
 
 import os
 import json
-import datetime
 import psycopg2
-from flask import Flask, render_template, jsonify, request
+import datetime
+from flask import Flask, render_template, request, jsonify
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+app = Flask(
+    __name__,
+    template_folder=os.path.join(BASE_DIR, "templates"),
+    static_folder=os.path.join(BASE_DIR, "static")
+)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -1151,25 +1157,25 @@ def get_clients():
     conn = get_db()
     cur = conn.cursor()
     cur.execute("""
-        SELECT uuid, hostname, ip, last_seen, status
-        FROM clients
+        SELECT uuid, hostname, ip, last_seen, status 
+        FROM clients 
         ORDER BY last_seen DESC
     """)
     rows = cur.fetchall()
     cur.close()
     conn.close()
 
-    data = []
+    clients = []
     for r in rows:
-        data.append({
+        clients.append({
             "uuid": r[0],
             "hostname": r[1],
             "ip": r[2],
-            "last_seen": r[3].isoformat() if r[3] else None,
+            "last_seen": r[3].isoformat(),
             "status": r[4]
         })
 
-    return jsonify(data)
+    return jsonify(clients)
 
 @app.route("/api/report", methods=["POST"])
 def report():
@@ -1178,25 +1184,31 @@ def report():
     cur = conn.cursor()
 
     cur.execute("""
-        INSERT INTO clients (uuid, hostname, ip, last_seen, status)
-        VALUES (%s,%s,%s,%s,%s)
+        INSERT INTO clients (uuid, hostname, ip, last_seen, status, hardware, apps)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT (uuid) DO UPDATE SET
         hostname=EXCLUDED.hostname,
         ip=EXCLUDED.ip,
         last_seen=EXCLUDED.last_seen,
-        status=EXCLUDED.status
+        status=EXCLUDED.status,
+        hardware=EXCLUDED.hardware,
+        apps=EXCLUDED.apps
     """, (
         data["uuid"],
         data["hostname"],
         data["ip"],
-        datetime.datetime.now(datetime.UTC),
-        "Online"
+        datetime.datetime.utcnow(),
+        "Online",
+        json.dumps(data["hardware"]),
+        json.dumps(data["apps"])
     ))
 
     conn.commit()
     cur.close()
     conn.close()
-    return {"ok": True}
+    return jsonify({"ok": True})
+
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
