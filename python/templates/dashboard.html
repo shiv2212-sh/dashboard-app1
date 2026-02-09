@@ -796,6 +796,7 @@ document.getElementById("toggle-theme-detail").addEventListener("click",toggleTh
 
 
 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -836,7 +837,7 @@ document.getElementById("toggle-theme-detail").addEventListener("click",toggleTh
 <body class="dark">
 <div class="container">
 
-    <!-- Main Dashboard -->
+    <!-- MAIN DASHBOARD -->
     <div id="main-dashboard">
         <h1>Client Monitoring Dashboard</h1>
         <div class="toolbar">
@@ -863,7 +864,7 @@ document.getElementById("toggle-theme-detail").addEventListener("click",toggleTh
         </table>
     </div>
 
-    <!-- Client Detail View -->
+    <!-- CLIENT DETAIL VIEW -->
     <div id="detail-view">
         <h2>Client Details</h2>
         <div class="toolbar">
@@ -882,12 +883,13 @@ document.getElementById("toggle-theme-detail").addEventListener("click",toggleTh
         <input type="text" id="app-search" placeholder="Search installed apps...">
         <table>
             <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Version</th>
-                    <th>Size</th>
-                    <th>Install Date</th>
-                </tr>
+            <tr>
+                <th>Name</th>
+                <th>Version</th>
+                <th>Size</th>
+                <th>Install Date</th>
+                <th>History</th>
+            </tr>
             </thead>
             <tbody id="apps-body"></tbody>
         </table>
@@ -924,9 +926,7 @@ async function loadClients(search = "") {
             `;
             tbody.appendChild(tr);
         });
-    } catch (err) {
-        console.error("Error loading clients:", err);
-    }
+    } catch (err) { console.error("Error loading clients:", err); }
 }
 
 function exportCSV() { window.location.href = "/export/csv"; }
@@ -959,6 +959,7 @@ async function viewClient(uuid) {
                 <td>${app.version || "N/A"}</td>
                 <td>${app.size || "N/A"}</td>
                 <td>${app.install_date || data.last_seen}</td>
+                <td><button class="view-btn" onclick='showAppHistory("${app.name}")'>History</button></td>
             `;
             appsBody.appendChild(tr);
         });
@@ -973,8 +974,17 @@ async function viewClient(uuid) {
             const rows = document.querySelectorAll("#apps-body tr");
             rows.forEach(row => { row.style.display = row.innerText.toLowerCase().includes(query) ? "" : "none"; });
         };
-
     } catch (err) { console.error("Error viewing client:", err); }
+}
+
+function showAppHistory(appName) {
+    // Mock history (replace with real API call later)
+    const mockHistory = [
+        `Installed on 2026-02-01`,
+        `Updated to version 2.0 on 2026-02-05`,
+        `Patched on 2026-02-07`
+    ];
+    alert(`History for ${appName}:\n\n${mockHistory.join("\n")}`);
 }
 
 function backToDashboard() {
@@ -984,11 +994,10 @@ function backToDashboard() {
 
 function goHome() { backToDashboard(); }
 
-// Dark/Light theme toggle
 function toggleTheme() {
     const body = document.body;
-    if (body.classList.contains("dark")) { body.classList.remove("dark"); body.classList.add("light"); }
-    else { body.classList.remove("light"); body.classList.add("dark"); }
+    body.classList.toggle("dark");
+    body.classList.toggle("light");
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -1002,3 +1011,5 @@ document.addEventListener("DOMContentLoaded", () => {
 </script>
 </body>
 </html>
+
+
