@@ -613,182 +613,108 @@
 <meta charset="UTF-8">
 <title>Client Dashboard</title>
 <style>
-    body.dark { background-color: #121212; color: #e0e0e0; font-family: Arial, sans-serif; }
-    .container { width: 90%; margin: 20px auto; }
-    h1 { text-align: center; }
-    .toolbar { margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap:10px; }
-    .toolbar input[type="text"] { width: 200px; padding: 5px; border-radius: 4px; border: 1px solid #555; background-color: #1e1e1e; color: #e0e0e0; }
-    .toolbar button { padding: 5px 10px; border-radius: 4px; border: none; background-color: #3a3a3a; color: #fff; cursor: pointer; }
-    .toolbar button:hover { background-color: #555; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-    table th, table td { padding: 8px; text-align: left; border: 1px solid #555; }
-    table th { background-color: #1e1e1e; }
-    table tr:nth-child(even) { background-color: #1a1a1a; }
-    table tr:hover { background-color: #333; }
-    button.view-btn { padding: 3px 6px; margin-right: 5px; border: none; border-radius: 3px; cursor: pointer; background-color: #007bff; color: #fff; }
-    button.view-btn:hover { background-color: #0056b3; }
-    a.pdf-link { color: #ff9800; text-decoration: none; }
-    a.pdf-link:hover { text-decoration: underline; }
-    #detail-view { display: none; margin-top: 20px; }
-    #detail-view h2 { margin-bottom: 10px; }
-    #detail-view table { margin-top: 10px; }
-    #app-search { width: 300px; padding: 5px; margin: 10px 0; border-radius: 4px; border: 1px solid #555; background-color: #1e1e1e; color: #e0e0e0; }
+    body { font-family: Arial, sans-serif; margin:0; padding:0; }
+    body.dark { background:#121212; color:#e0e0e0; }
+    .container { width:90%; margin:20px auto; }
+    h1 { text-align:center; }
+    .toolbar { margin-bottom:15px; display:flex; justify-content:space-between; align-items:center; }
+    .toolbar input, .toolbar button { padding:5px; border-radius:4px; }
+    .toolbar input { width:200px; background:#1e1e1e; color:#e0e0e0; border:1px solid #555; }
+    .toolbar button { background:#3a3a3a; color:#fff; border:none; cursor:pointer; }
+    .toolbar button:hover { background:#555; }
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    table th, table td { padding:8px; border:1px solid #555; text-align:left; }
+    table th { background:#1e1e1e; }
+    table tr:nth-child(even) { background:#1a1a1a; }
+    table tr:hover { background:#333; }
+    .view-btn { padding:3px 6px; background:#007bff; color:#fff; border:none; cursor:pointer; }
+    .view-btn:hover { background:#0056b3; }
+    a.pdf-link { color:#ff9800; text-decoration:none; }
+    a.pdf-link:hover { text-decoration:underline; }
+    #client-detail { margin-top:20px; display:none; }
+    #client-detail table { margin-top:5px; }
+    #toggle-mode { position:fixed; top:10px; right:10px; padding:5px; }
 </style>
 </head>
 <body class="dark">
 <div class="container">
-
-    <div id="main-dashboard">
-        <h1>Client Monitoring Dashboard</h1>
-        <div class="toolbar">
-            <input type="text" id="search" placeholder="Search clients...">
+    <h1>Client Monitoring Dashboard</h1>
+    <div class="toolbar">
+        <input type="text" id="search" placeholder="Search clients...">
+        <div>
             <button onclick="exportCSV()">Export CSV</button>
+            <button id="toggle-mode">Toggle Dark/Light</button>
         </div>
-
-        <table>
-            <thead>
+    </div>
+    <table>
+        <thead>
             <tr>
-                <th>UUID</th>
-                <th>MAC</th>
-                <th>Hostname</th>
-                <th>IP</th>
-                <th>Last Seen</th>
-                <th>Status</th>
-                <th>Actions</th>
+                <th>UUID</th><th>MAC</th><th>Hostname</th><th>IP</th>
+                <th>Last Seen</th><th>Status</th><th>Actions</th>
             </tr>
-            </thead>
-            <tbody id="clients-body"></tbody>
-        </table>
+        </thead>
+        <tbody id="clients-body"></tbody>
+    </table>
+
+    <div id="client-detail">
+        <button onclick="hideDetail()">Back</button>
+        <button onclick="goHome()">Home</button>
+        <h2>Client Detail</h2>
+        <div id="hardware-section"></div>
+        <input type="text" id="app-search" placeholder="Search Installed Apps...">
+        <div id="apps-section"></div>
+        <a id="pdf-download" target="_blank">Download PDF</a>
     </div>
-
-    <div id="detail-view">
-        <h2>Client Details</h2>
-        <div class="toolbar">
-            <button onclick="backToDashboard()">Back</button>
-            <button onclick="goHome()">Home</button>
-            <a href="#" id="pdf-link" target="_blank">Export PDF</a>
-        </div>
-
-        <h3>Hardware Info</h3>
-        <table>
-            <tbody id="hardware-body"></tbody>
-        </table>
-
-        <h3>Installed Applications</h3>
-        <input type="text" id="app-search" placeholder="Search installed apps...">
-        <table>
-            <tbody id="apps-body"></tbody>
-        </table>
-    </div>
-
 </div>
 
 <script>
-async function loadClients(search = "") {
-    try {
-        const res = await fetch(`/api/clients?search=${encodeURIComponent(search)}`);
-        const data = await res.json();
+async function loadClients(search="") {
+    const res = await fetch(`/api/clients?search=${encodeURIComponent(search)}`);
+    const data = await res.json();
+    const tbody = document.getElementById("clients-body");
+    tbody.innerHTML = "";
+    if(!data.length) { tbody.innerHTML = `<tr><td colspan="7">No clients found</td></tr>`; return; }
+    data.forEach(c=>{
+        const tr=document.createElement("tr");
+        tr.innerHTML=`<td>${c.uuid}</td><td>${c.mac}</td><td>${c.hostname}</td>
+                      <td>${c.ip}</td><td>${c.last_seen}</td><td>${c.status}</td>
+                      <td><button class="view-btn" onclick="viewClient('${c.uuid}')">View</button>
+                          <a class="pdf-link" href="/export/pdf/${c.uuid}" target="_blank">PDF</a></td>`;
+        tbody.appendChild(tr);
+    });
+}
 
-        const tbody = document.getElementById("clients-body");
-        tbody.innerHTML = "";
+async function viewClient(uuid){
+    const res=await fetch(`/api/client/${uuid}`);
+    const data=await res.json();
+    document.getElementById("client-detail").style.display="block";
+    document.querySelector("table").style.display="none";
+    document.getElementById("clients-body").parentElement.style.display="none";
 
-        if (!data.length) {
-            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No clients found</td></tr>`;
-            return;
-        }
+    let hwHTML="<h3>Hardware Info</h3><table>";
+    for(const [k,v] of Object.entries(data.hardware)){ hwHTML+=`<tr><td>${k}</td><td>${v}</td></tr>`;}
+    hwHTML+="</table>";
+    document.getElementById("hardware-section").innerHTML=hwHTML;
 
-        data.forEach(c => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td>${c.uuid}</td>
-                <td>${c.mac}</td>
-                <td>${c.hostname}</td>
-                <td>${c.ip}</td>
-                <td>${c.last_seen}</td>
-                <td>${c.status}</td>
-                <td>
-                    <button class="view-btn" onclick="viewClient('${c.uuid}')">View</button>
-                    <a class="pdf-link" href="/export/pdf/${c.uuid}" target="_blank">PDF</a>
-                </td>
-            `;
-            tbody.appendChild(tr);
+    let appsHTML="<h3>Installed Apps</h3><table id='apps-table'>";
+    data.apps.forEach(a=>appsHTML+=`<tr><td>${a}</td></tr>`);
+    appsHTML+="</table>";
+    document.getElementById("apps-section").innerHTML=appsHTML;
+
+    document.getElementById("app-search").addEventListener("input", e=>{
+        const val=e.target.value.toLowerCase();
+        document.querySelectorAll("#apps-table tr").forEach(tr=>{
+            tr.style.display=tr.innerText.toLowerCase().includes(val)?"":"none";
         });
-    } catch (err) {
-        console.error("Error loading clients:", err);
-    }
+    });
+
+    document.getElementById("pdf-download").href=`/export/pdf/${uuid}`;
 }
 
-function exportCSV() {
-    window.location.href = "/export/csv";
-}
-
-async function viewClient(uuid) {
-    try {
-        const res = await fetch(`/api/client/${uuid}`);
-        const data = await res.json();
-
-        if (data.error) {
-            alert(data.error);
-            return;
-        }
-
-        // Switch view
-        document.getElementById("main-dashboard").style.display = "none";
-        document.getElementById("detail-view").style.display = "block";
-
-        // Hardware table
-        const hardwareBody = document.getElementById("hardware-body");
-        hardwareBody.innerHTML = "";
-        for (const [key, value] of Object.entries(data.hardware)) {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `<th>${key}</th><td>${value}</td>`;
-            hardwareBody.appendChild(tr);
-        }
-
-        // Apps table
-        const appsBody = document.getElementById("apps-body");
-        appsBody.innerHTML = "";
-        data.apps.forEach(app => {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `<td>${app}</td>`;
-            appsBody.appendChild(tr);
-        });
-
-        document.getElementById("pdf-link").href = `/export/pdf/${uuid}`;
-
-        // App search filter
-        const appSearch = document.getElementById("app-search");
-        appSearch.value = "";
-        appSearch.oninput = () => {
-            const query = appSearch.value.toLowerCase();
-            const rows = document.querySelectorAll("#apps-body tr");
-            rows.forEach(row => {
-                row.style.display = row.innerText.toLowerCase().includes(query) ? "" : "none";
-            });
-        };
-
-    } catch (err) {
-        console.error("Error viewing client:", err);
-    }
-}
-
-function backToDashboard() {
-    document.getElementById("detail-view").style.display = "none";
-    document.getElementById("main-dashboard").style.display = "block";
-}
-
-function goHome() {
-    backToDashboard();
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-    loadClients();
-    document.getElementById("search").addEventListener("input", (e) => loadClients(e.target.value));
-    setInterval(() => loadClients(document.getElementById("search").value), 15000);
-});
-</script>
-</body>
-</html>
+function hideDetail(){
+    document.getElementById("client-detail").style.display="none";
+    document.querySelector("table").style.display="";
+    document.getElementById("
 
 
 
