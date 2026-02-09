@@ -606,204 +606,98 @@
 
 
 
-<!-- 
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Client Dashboard</title>
+    <title>Client Detail</title>
     <style>
-        /* ---------- Dark Mode CSS ---------- */
         body.dark {
             background-color: #121212;
             color: #e0e0e0;
             font-family: Arial, sans-serif;
         }
-
-        .container {
-            width: 90%;
-            margin: 20px auto;
-        }
-
-        h1 {
-            text-align: center;
-        }
-
-        .toolbar {
-            margin-bottom: 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .toolbar input[type="text"] {
-            width: 200px;
-            padding: 5px;
-            border-radius: 4px;
-            border: 1px solid #555;
-            background-color: #1e1e1e;
-            color: #e0e0e0;
-        }
-
-        .toolbar button {
-            padding: 5px 10px;
-            border-radius: 4px;
-            border: none;
-            background-color: #3a3a3a;
-            color: #fff;
-            cursor: pointer;
-        }
-
-        .toolbar button:hover {
-            background-color: #555;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-        }
-
-        table th, table td {
-            padding: 8px;
-            text-align: left;
-            border: 1px solid #555;
-        }
-
-        table th {
-            background-color: #1e1e1e;
-        }
-
-        table tr:nth-child(even) {
-            background-color: #1a1a1a;
-        }
-
-        table tr:hover {
-            background-color: #333;
-        }
-
-        button.view-btn {
-            padding: 3px 6px;
-            margin-right: 5px;
-            border: none;
-            border-radius: 3px;
-            cursor: pointer;
-            background-color: #007bff;
-            color: #fff;
-        }
-
-        button.view-btn:hover {
-            background-color: #0056b3;
-        }
-
-        a.pdf-link {
-            color: #ff9800;
-            text-decoration: none;
-        }
-
-        a.pdf-link:hover {
-            text-decoration: underline;
-        }
+        .container { width: 90%; margin: 20px auto; }
+        h1 { text-align: center; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        table th, table td { padding: 8px; border: 1px solid #555; }
+        table th { background-color: #1e1e1e; }
+        table tr:nth-child(even) { background-color: #1a1a1a; }
+        table tr:hover { background-color: #333; }
+        input[type="text"] { width: 200px; padding: 5px; border-radius: 4px; border: 1px solid #555; background-color: #1e1e1e; color: #e0e0e0; margin-bottom: 10px; }
+        button { padding: 5px 10px; border-radius: 4px; border: none; background-color: #3a3a3a; color: #fff; cursor: pointer; margin-right: 5px; }
+        button:hover { background-color: #555; }
     </style>
 </head>
 <body class="dark">
 <div class="container">
-    <h1>Client Monitoring Dashboard</h1>
-
-    <div class="toolbar">
-        <input type="text" id="search" placeholder="Search clients...">
-        <button onclick="exportCSV()">Export CSV</button>
+    <h1>Client Detail</h1>
+    <div>
+        <button onclick="goHome()">Home</button>
+        <button onclick="goBack()">Back</button>
     </div>
 
-    <table>
-        <thead>
-        <tr>
-            <th>UUID</th>
-            <th>MAC</th>
-            <th>Hostname</th>
-            <th>IP</th>
-            <th>Last Seen</th>
-            <th>Status</th>
-            <th>Actions</th>
-        </tr>
-        </thead>
-        <tbody id="clients-body"></tbody>
+    <h2>Hardware Info</h2>
+    <table id="hardware-table">
+        <thead><tr><th>Component</th><th>Value</th></tr></thead>
+        <tbody></tbody>
+    </table>
+
+    <h2>Installed Apps</h2>
+    <input type="text" id="app-search" placeholder="Search apps...">
+    <table id="apps-table">
+        <thead><tr><th>App Name</th></tr></thead>
+        <tbody></tbody>
     </table>
 </div>
 
 <script>
-    async function loadClients(search = "") {
-        try {
-            const res = await fetch(`/api/clients?search=${encodeURIComponent(search)}`);
-            const data = await res.json();
+    const urlParams = new URLSearchParams(window.location.search);
+    const uuid = urlParams.get('uuid');
 
-            const tbody = document.getElementById("clients-body");
-            tbody.innerHTML = "";
+    async function loadClient(uuid) {
+        const res = await fetch(`/api/client/${uuid}`);
+        const data = await res.json();
 
-            if (!data.length) {
-                tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No clients found</td></tr>`;
-                return;
-            }
-
-            data.forEach(c => {
-                const tr = document.createElement("tr");
-
-                tr.innerHTML = `
-                    <td>${c.uuid}</td>
-                    <td>${c.mac}</td>
-                    <td>${c.hostname}</td>
-                    <td>${c.ip}</td>
-                    <td>${c.last_seen}</td>
-                    <td>${c.status}</td>
-                    <td>
-                        <button class="view-btn" onclick="viewClient('${c.uuid}')">View</button>
-                        <a class="pdf-link" href="/export/pdf/${c.uuid}" target="_blank">PDF</a>
-                    </td>
-                `;
-
-                tbody.appendChild(tr);
-            });
-        } catch (err) {
-            console.error("Error loading clients:", err);
+        // Populate hardware table
+        const hardwareTbody = document.querySelector("#hardware-table tbody");
+        hardwareTbody.innerHTML = "";
+        for (const [key, value] of Object.entries(data.hardware)) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${key}</td><td>${value}</td>`;
+            hardwareTbody.appendChild(tr);
         }
-    }
 
-    async function viewClient(uuid) {
-        try {
-            const res = await fetch(`/api/client/${uuid}`);
-            const data = await res.json();
-
-            alert(
-                `UUID: ${data.uuid}\n` +
-                `Hostname: ${data.hostname}\n` +
-                `MAC: ${data.mac}\n` +
-                `IP: ${data.ip}\n` +
-                `Last Seen: ${data.last_seen}\n\n` +
-                `Hardware:\n${JSON.stringify(data.hardware, null, 2)}\n\n` +
-                `Installed Apps:\n${JSON.stringify(data.apps, null, 2)}`
-            );
-        } catch (err) {
-            console.error("View error:", err);
-        }
-    }
-
-    function exportCSV() {
-        window.location.href = "/export/csv";
-    }
-
-    document.addEventListener("DOMContentLoaded", () => {
-        loadClients();
-
-        document.getElementById("search").addEventListener("input", (e) => {
-            loadClients(e.target.value);
+        // Populate apps table
+        const appsTbody = document.querySelector("#apps-table tbody");
+        appsTbody.innerHTML = "";
+        data.apps.forEach(app => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<td>${app}</td>`;
+            appsTbody.appendChild(tr);
         });
 
-        // Auto refresh every 15 sec
-        setInterval(() => loadClients(document.getElementById("search").value), 15000);
-    });
+        // App search filter
+        document.getElementById("app-search").addEventListener("input", e => {
+            const search = e.target.value.toLowerCase();
+            appsTbody.innerHTML = "";
+            data.apps.filter(app => app.toLowerCase().includes(search))
+                     .forEach(app => {
+                         const tr = document.createElement("tr");
+                         tr.innerHTML = `<td>${app}</td>`;
+                         appsTbody.appendChild(tr);
+                     });
+        });
+    }
+
+    function goHome() { window.location.href = "/"; }
+    function goBack() { window.history.back(); }
+
+    loadClient(uuid);
 </script>
 </body>
-</html> -->
+</html>
 
 
 
@@ -817,6 +711,9 @@
 
 
 
+<!-- running dashboard without any issue  -->
+
+<!-- 
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1076,4 +973,4 @@
     });
 </script>
 </body>
-</html>
+</html> -->
