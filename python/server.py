@@ -833,6 +833,12 @@ def get_client(uuid):
 def index():
     return render_template("dashboard.html")
 
+if __name__ == "__main__":
+    init_db()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
+
 # -----------------------------
 if __name__ == "__main__":
     init_db()
