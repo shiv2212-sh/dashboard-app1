@@ -1172,6 +1172,7 @@
 from flask import Flask, request, jsonify, send_file
 import psycopg2, psycopg2.extras
 import json, datetime, io
+import os
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
