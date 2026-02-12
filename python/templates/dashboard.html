@@ -800,129 +800,83 @@ document.getElementById("toggle-theme-detail").addEventListener("click",toggleTh
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Client Dashboard</title>
-    <style>
-        body {
-            font-family: Arial;
-            background: #f4f6f9;
-            margin: 20px;
-        }
-        h1 {
-            text-align: center;
-        }
-        .client {
-            background: white;
-            padding: 15px;
-            margin-bottom: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-        }
-        .online {
-            color: green;
-            font-weight: bold;
-        }
-        .offline {
-            color: red;
-            font-weight: bold;
-        }
-        table {
-            border-collapse: collapse;
-            width: 100%;
-            margin-top: 10px;
-        }
-        table, th, td {
-            border: 1px solid #ddd;
-        }
-        th, td {
-            padding: 8px;
-            text-align: left;
-        }
-        th {
-            background: #f2f2f2;
-        }
-        button {
-            padding: 6px 12px;
-            margin-top: 10px;
-            cursor: pointer;
-        }
-    </style>
+<title>Client Dashboard</title>
+<style>
+body{font-family:Arial;background:#f4f6f9;margin:20px}
+body.dark{background:#121212;color:#eee}
+.client{background:#fff;padding:15px;border-radius:8px;margin-bottom:20px}
+body.dark .client{background:#1e1e1e}
+.online{color:lime;font-weight:bold}
+.offline{color:red;font-weight:bold}
+table{width:100%;border-collapse:collapse;margin-top:8px}
+th,td{border:1px solid #ccc;padding:6px}
+.top{display:flex;justify-content:space-between}
+</style>
 </head>
 <body>
 
-<h1>Client Monitoring Dashboard</h1>
+<div class="top">
+<input id="search" placeholder="Search Client..." onkeyup="loadClients()">
+<button onclick="toggleDark()">🌙 Dark Mode</button>
+</div>
 
 <div id="clients"></div>
 
 <script>
-async function loadClients() {
-    const res = await fetch("/api/clients");
-    const data = await res.json();
+let dark = localStorage.getItem("dark")==="1";
+if(dark) document.body.classList.add("dark");
 
-    const container = document.getElementById("clients");
-    container.innerHTML = "";
+function toggleDark(){
+  dark=!dark;
+  localStorage.setItem("dark",dark?"1":"0");
+  document.body.classList.toggle("dark");
+}
 
-    data.forEach(client => {
+async function loadClients(){
+  const q = document.getElementById("search").value.toLowerCase();
+  const res = await fetch("/api/clients");
+  const data = await res.json();
+  const box = document.getElementById("clients");
+  box.innerHTML="";
 
-        const div = document.createElement("div");
-        div.className = "client";
-
-        const status = client.online 
-            ? "<span class='online'>ONLINE</span>"
-            : "<span class='offline'>OFFLINE</span>";
-
-        let hardwareRows = "";
-        for (const key in client.hardware) {
-            hardwareRows += `<tr><td>${key}</td><td>${client.hardware[key]}</td></tr>`;
-        }
-
-        let appRows = "";
-        client.apps.forEach(app => {
-            appRows += `
-                <tr>
-                    <td>${app.name || "N/A"}</td>
-                    <td>${app.version || "N/A"}</td>
-                    <td>${app.size || "N/A"}</td>
-                    <td>${app.install_date || "N/A"}</td>
-                </tr>
-            `;
-        });
-
-        div.innerHTML = `
-            <h2>${client.hostname} (${status})</h2>
-            <p><b>UUID:</b> ${client.uuid}</p>
-            <p><b>MAC:</b> ${client.mac}</p>
-            <p><b>IP:</b> ${client.ip}</p>
-            <p><b>Last Seen:</b> ${client.last_seen}</p>
-
-            <h3>Hardware Info</h3>
-            <table>
-                <tr><th>Field</th><th>Value</th></tr>
-                ${hardwareRows}
-            </table>
-
-            <h3>Installed Applications</h3>
-            <table>
-                <tr>
-                    <th>Name</th>
-                    <th>Version</th>
-                    <th>Size</th>
-                    <th>Install Date</th>
-                </tr>
-                ${appRows}
-            </table>
-
-            <button onclick="window.location='/export/pdf/${client.uuid}'">
-                Download PDF
-            </button>
-        `;
-
-        container.appendChild(div);
+  data.filter(c=>c.hostname.toLowerCase().includes(q)||c.uuid.includes(q))
+  .forEach(c=>{
+    let appRows="";
+    c.apps.forEach(a=>{
+      appRows+=`<tr><td>${a.name}</td><td>${a.version}</td><td>${a.size}</td><td>${a.install_date}</td></tr>`;
     });
+
+    box.innerHTML+=`
+    <div class="client">
+      <div class="top">
+        <h2>${c.hostname} (${c.online?'<span class=online>ONLINE</span>':'<span class=offline>OFFLINE</span>'})</h2>
+        <div>
+          <button onclick="location='/export/pdf/${c.uuid}'">PDF</button>
+          <button onclick="location='/export/csv/${c.uuid}'">CSV</button>
+        </div>
+      </div>
+
+      <input placeholder="Search app..." onkeyup="filterApps(this)">
+
+      <table>
+        <tr><th>Name</th><th>Version</th><th>Size</th><th>Date</th></tr>
+        ${appRows}
+      </table>
+    </div>`;
+  });
+}
+
+function filterApps(input){
+  const val=input.value.toLowerCase();
+  const rows=input.nextElementSibling.querySelectorAll("tr");
+  rows.forEach((r,i)=>{
+    if(i===0) return;
+    r.style.display = r.innerText.toLowerCase().includes(val) ? "" : "none";
+  });
 }
 
 loadClients();
-setInterval(loadClients, 30000);
+setInterval(loadClients,30000);
 </script>
-
 </body>
 </html>
