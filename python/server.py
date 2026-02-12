@@ -647,146 +647,350 @@
 
 
 
-import os, json, datetime, psycopg2, tempfile
-from flask import Flask, jsonify, render_template, send_file, request, Response
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
+# import os, json, datetime, psycopg2, tempfile
+# from flask import Flask, jsonify, render_template, send_file, request, Response
+# from reportlab.lib.pagesizes import A4
+# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+# from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.lib import colors
 
+# DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# app = Flask(__name__, template_folder="templates")
+
+# # ---------- DB ----------
+# def get_db():
+#     return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+# def init_db():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#     CREATE TABLE IF NOT EXISTS clients (
+#         uuid TEXT PRIMARY KEY,
+#         mac TEXT,
+#         hostname TEXT,
+#         ip TEXT,
+#         last_seen TIMESTAMP,
+#         hardware_info TEXT,
+#         installed_apps TEXT
+#     )
+#     """)
+#     con.commit()
+#     con.close()
+
+# def safe_json(v):
+#     try:
+#         return json.loads(v)
+#     except:
+#         return []
+
+# def parse_ts(ts):
+#     if isinstance(ts, datetime.datetime):
+#         return ts
+#     try:
+#         return datetime.datetime.fromisoformat(str(ts))
+#     except:
+#         return datetime.datetime.utcnow()
+
+# # ---------- ROUTES ----------
+# @app.route("/")
+# def dashboard():
+#     return render_template("dashboard.html")
+
+# @app.route("/api/report", methods=["POST"])
+# def api_report():
+#     data = request.get_json(force=True)
+#     ip = request.remote_addr
+#     now = datetime.datetime.utcnow()
+
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#     INSERT INTO clients (uuid, mac, hostname, ip, last_seen, hardware_info, installed_apps)
+#     VALUES (%s,%s,%s,%s,%s,%s,%s)
+#     ON CONFLICT(uuid) DO UPDATE SET
+#         mac=EXCLUDED.mac,
+#         hostname=EXCLUDED.hostname,
+#         ip=EXCLUDED.ip,
+#         last_seen=EXCLUDED.last_seen,
+#         hardware_info=EXCLUDED.hardware_info,
+#         installed_apps=EXCLUDED.installed_apps
+#     """, (
+#         data["uuid"],
+#         data["mac"],
+#         data["hostname"],
+#         ip,
+#         now,
+#         data["hardware"],
+#         data["apps"]
+#     ))
+#     con.commit()
+#     con.close()
+
+#     return jsonify({"status": "ok"})
+
+# @app.route("/api/clients")
+# def api_clients():
+#     search = request.args.get("search","")
+#     con = get_db()
+#     cur = con.cursor()
+
+#     if search:
+#         cur.execute("""
+#         SELECT uuid, mac, hostname, ip, last_seen
+#         FROM clients
+#         WHERE uuid ILIKE %s OR hostname ILIKE %s OR mac ILIKE %s
+#         ORDER BY last_seen DESC
+#         """,(f"%{search}%",f"%{search}%",f"%{search}%"))
+#     else:
+#         cur.execute("SELECT uuid, mac, hostname, ip, last_seen FROM clients ORDER BY last_seen DESC")
+
+#     rows = cur.fetchall()
+#     con.close()
+
+#     now = datetime.datetime.utcnow()
+#     out = []
+#     for r in rows:
+#         ts = parse_ts(r[4])
+#         status = "Online" if (now-ts).total_seconds() < 60 else "Offline"
+#         out.append({
+#             "uuid": r[0],
+#             "mac": r[1],
+#             "hostname": r[2],
+#             "ip": r[3],
+#             "last_seen": ts.strftime("%Y-%m-%d %H:%M:%S"),
+#             "status": status
+#         })
+#     return jsonify(out)
+
+# @app.route("/api/client/<uuid>")
+# def api_client(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT * FROM clients WHERE uuid=%s",(uuid,))
+#     r = cur.fetchone()
+#     con.close()
+
+#     if not r:
+#         return jsonify({"error":"Client not found"}),404
+
+#     return jsonify({
+#         "uuid":r[0],
+#         "mac":r[1],
+#         "hostname":r[2],
+#         "ip":r[3],
+#         "last_seen":parse_ts(r[4]).strftime("%Y-%m-%d %H:%M:%S"),
+#         "hardware":safe_json(r[5]),
+#         "apps":safe_json(r[6])
+#     })
+
+# # ---------- RUN ----------
+# if __name__ == "__main__":
+#     init_db()
+#     app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
+
+
+
+
+
+
+
+
+import os
+import json
+from datetime import datetime, timezone
+import psycopg2
+from flask import Flask, jsonify, render_template, request
+
+# ---------------- CONFIG ----------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__, template_folder="templates")
 
-# ---------- DB ----------
+
+# ---------------- DATABASE ----------------
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg2.connect(
+        DATABASE_URL,
+        sslmode="require",
+        connect_timeout=5
+    )
+
 
 def init_db():
-    con = get_db()
-    cur = con.cursor()
+    conn = get_db()
+    cur = conn.cursor()
+
     cur.execute("""
     CREATE TABLE IF NOT EXISTS clients (
         uuid TEXT PRIMARY KEY,
         mac TEXT,
         hostname TEXT,
         ip TEXT,
-        last_seen TIMESTAMP,
+        last_seen TIMESTAMPTZ,
         hardware_info TEXT,
         installed_apps TEXT
     )
     """)
-    con.commit()
-    con.close()
 
-def safe_json(v):
+    conn.commit()
+    conn.close()
+
+
+# ---------------- HELPERS ----------------
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
+def safe_json(value):
     try:
-        return json.loads(v)
+        return json.loads(value) if value else []
     except:
         return []
 
-def parse_ts(ts):
-    if isinstance(ts, datetime.datetime):
-        return ts
-    try:
-        return datetime.datetime.fromisoformat(str(ts))
-    except:
-        return datetime.datetime.utcnow()
 
-# ---------- ROUTES ----------
+def parse_timestamp(value):
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value))
+    except:
+        return utc_now()
+
+
+# ---------------- ROUTES ----------------
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
+
+# -------- CLIENT REPORT --------
 @app.route("/api/report", methods=["POST"])
 def api_report():
-    data = request.get_json(force=True)
-    ip = request.remote_addr
-    now = datetime.datetime.utcnow()
+    try:
+        data = request.get_json(force=True)
+        now = utc_now()
+        ip = request.remote_addr
 
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("""
-    INSERT INTO clients (uuid, mac, hostname, ip, last_seen, hardware_info, installed_apps)
-    VALUES (%s,%s,%s,%s,%s,%s,%s)
-    ON CONFLICT(uuid) DO UPDATE SET
-        mac=EXCLUDED.mac,
-        hostname=EXCLUDED.hostname,
-        ip=EXCLUDED.ip,
-        last_seen=EXCLUDED.last_seen,
-        hardware_info=EXCLUDED.hardware_info,
-        installed_apps=EXCLUDED.installed_apps
-    """, (
-        data["uuid"],
-        data["mac"],
-        data["hostname"],
-        ip,
-        now,
-        data["hardware"],
-        data["apps"]
-    ))
-    con.commit()
-    con.close()
+        conn = get_db()
+        cur = conn.cursor()
 
-    return jsonify({"status": "ok"})
+        cur.execute("""
+        INSERT INTO clients (uuid, mac, hostname, ip, last_seen, hardware_info, installed_apps)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (uuid) DO UPDATE SET
+            mac = EXCLUDED.mac,
+            hostname = EXCLUDED.hostname,
+            ip = EXCLUDED.ip,
+            last_seen = EXCLUDED.last_seen,
+            hardware_info = EXCLUDED.hardware_info,
+            installed_apps = EXCLUDED.installed_apps
+        """, (
+            data["uuid"],
+            data["mac"],
+            data["hostname"],
+            ip,
+            now,
+            data.get("hardware", "{}"),
+            data.get("apps", "[]")
+        ))
 
+        conn.commit()
+        conn.close()
+
+        return jsonify({"status": "ok"})
+
+    except Exception as e:
+        print("ERROR /api/report:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# -------- GET ALL CLIENTS --------
 @app.route("/api/clients")
 def api_clients():
-    search = request.args.get("search","")
-    con = get_db()
-    cur = con.cursor()
+    try:
+        search = request.args.get("search", "")
 
-    if search:
-        cur.execute("""
-        SELECT uuid, mac, hostname, ip, last_seen
-        FROM clients
-        WHERE uuid ILIKE %s OR hostname ILIKE %s OR mac ILIKE %s
-        ORDER BY last_seen DESC
-        """,(f"%{search}%",f"%{search}%",f"%{search}%"))
-    else:
-        cur.execute("SELECT uuid, mac, hostname, ip, last_seen FROM clients ORDER BY last_seen DESC")
+        conn = get_db()
+        cur = conn.cursor()
 
-    rows = cur.fetchall()
-    con.close()
+        if search:
+            cur.execute("""
+            SELECT uuid, mac, hostname, ip, last_seen
+            FROM clients
+            WHERE uuid ILIKE %s OR hostname ILIKE %s OR mac ILIKE %s
+            ORDER BY last_seen DESC
+            """, (f"%{search}%", f"%{search}%", f"%{search}%"))
+        else:
+            cur.execute("""
+            SELECT uuid, mac, hostname, ip, last_seen
+            FROM clients
+            ORDER BY last_seen DESC
+            """)
 
-    now = datetime.datetime.utcnow()
-    out = []
-    for r in rows:
-        ts = parse_ts(r[4])
-        status = "Online" if (now-ts).total_seconds() < 60 else "Offline"
-        out.append({
-            "uuid": r[0],
-            "mac": r[1],
-            "hostname": r[2],
-            "ip": r[3],
-            "last_seen": ts.strftime("%Y-%m-%d %H:%M:%S"),
-            "status": status
-        })
-    return jsonify(out)
+        rows = cur.fetchall()
+        conn.close()
 
+        now = utc_now()
+        result = []
+
+        for r in rows:
+            last_seen = parse_timestamp(r[4])
+            diff = (now - last_seen).total_seconds()
+
+            status = "Online" if diff < 60 else "Offline"
+
+            result.append({
+                "uuid": r[0],
+                "mac": r[1],
+                "hostname": r[2],
+                "ip": r[3],
+                "last_seen": last_seen.strftime("%Y-%m-%d %H:%M:%S"),
+                "status": status
+            })
+
+        return jsonify(result)
+
+    except Exception as e:
+        print("ERROR /api/clients:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# -------- GET SINGLE CLIENT --------
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM clients WHERE uuid=%s",(uuid,))
-    r = cur.fetchone()
-    con.close()
+    try:
+        conn = get_db()
+        cur = conn.cursor()
 
-    if not r:
-        return jsonify({"error":"Client not found"}),404
+        cur.execute("SELECT * FROM clients WHERE uuid=%s", (uuid,))
+        row = cur.fetchone()
 
-    return jsonify({
-        "uuid":r[0],
-        "mac":r[1],
-        "hostname":r[2],
-        "ip":r[3],
-        "last_seen":parse_ts(r[4]).strftime("%Y-%m-%d %H:%M:%S"),
-        "hardware":safe_json(r[5]),
-        "apps":safe_json(r[6])
-    })
+        conn.close()
 
-# ---------- RUN ----------
+        if not row:
+            return jsonify({"error": "Client not found"}), 404
+
+        return jsonify({
+            "uuid": row[0],
+            "mac": row[1],
+            "hostname": row[2],
+            "ip": row[3],
+            "last_seen": parse_timestamp(row[4]).strftime("%Y-%m-%d %H:%M:%S"),
+            "hardware": safe_json(row[5]),
+            "apps": safe_json(row[6])
+        })
+
+    except Exception as e:
+        print("ERROR /api/client:", e)
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------- START ----------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
 
