@@ -977,197 +977,20 @@
 
 
 
-
-
-# import os, json, tempfile, datetime
-# import psycopg2
-# from flask import Flask, request, jsonify, send_file, render_template
-# from reportlab.lib.pagesizes import A4
-# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-# from reportlab.lib.styles import getSampleStyleSheet
-# from reportlab.lib import colors
-
-# app = Flask(__name__)
-# DATABASE_URL = os.environ.get("DATABASE_URL")
-
-# def get_db():
-#     return psycopg2.connect(DATABASE_URL, sslmode="require")
-
-# def safe_json(v):
-#     if not v:
-#         return {}
-#     try:
-#         return json.loads(v)
-#     except:
-#         return {}
-
-# def init_db():
-#     con = get_db()
-#     cur = con.cursor()
-#     cur.execute("""
-#     CREATE TABLE IF NOT EXISTS clients (
-#         client_uuid TEXT PRIMARY KEY,
-#         mac_address TEXT,
-#         hostname TEXT,
-#         last_seen TEXT,
-#         client_ip TEXT,
-#         hardware_info TEXT,
-#         installed_apps TEXT
-#     )
-#     """)
-#     con.commit()
-#     con.close()
-
-# @app.route("/")
-# def index():
-#     return render_template("dashboard.html")
-
-# @app.route("/api/report", methods=["POST"])
-# def api_report():
-#     data = request.json
-#     con = get_db()
-#     cur = con.cursor()
-
-#     cur.execute("SELECT client_uuid FROM clients WHERE client_uuid=%s", (data["uuid"],))
-#     exists = cur.fetchone()
-
-#     if exists:
-#         cur.execute("""
-#         UPDATE clients SET
-#             mac_address=%s,
-#             hostname=%s,
-#             last_seen=%s,
-#             client_ip=%s,
-#             hardware_info=%s,
-#             installed_apps=%s
-#         WHERE client_uuid=%s
-#         """, (
-#             data["mac"],
-#             data["hostname"],
-#             datetime.datetime.utcnow().isoformat(),
-#             request.remote_addr,
-#             json.dumps(data["hardware"]),
-#             json.dumps(data["apps"]),
-#             data["uuid"]
-#         ))
-#     else:
-#         cur.execute("""
-#         INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
-#         """, (
-#             data["uuid"],
-#             data["mac"],
-#             data["hostname"],
-#             datetime.datetime.utcnow().isoformat(),
-#             request.remote_addr,
-#             json.dumps(data["hardware"]),
-#             json.dumps(data["apps"])
-#         ))
-
-#     con.commit()
-#     con.close()
-#     return jsonify({"status": "ok"})
-
-# @app.route("/api/clients")
-# def api_clients():
-#     con = get_db()
-#     cur = con.cursor()
-#     cur.execute("SELECT * FROM clients")
-#     rows = cur.fetchall()
-#     con.close()
-
-#     result = []
-#     for r in rows:
-#         last_seen = datetime.datetime.fromisoformat(r[3])
-#         online = (datetime.datetime.utcnow() - last_seen).seconds < 120
-
-#         result.append({
-#             "uuid": r[0],
-#             "mac": r[1],
-#             "hostname": r[2],
-#             "last_seen": r[3],
-#             "ip": r[4],
-#             "hardware": safe_json(r[5]),
-#             "apps": safe_json(r[6]),
-#             "online": online
-#         })
-
-#     return jsonify(result)
-
-# @app.route("/export/pdf/<uuid>")
-# def export_pdf(uuid):
-#     con = get_db()
-#     cur = con.cursor()
-#     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
-#     r = cur.fetchone()
-#     con.close()
-
-#     if not r:
-#         return "Not Found", 404
-
-#     fd, path = tempfile.mkstemp(suffix=".pdf")
-#     os.close(fd)
-
-#     doc = SimpleDocTemplate(path, pagesize=A4)
-#     styles = getSampleStyleSheet()
-#     elements = []
-
-#     elements.append(Paragraph("Client Report", styles["Title"]))
-#     elements.append(Spacer(1, 12))
-
-#     hw = safe_json(r[5])
-#     hw_data = [["Field", "Value"]] + [[k, str(v)] for k,v in hw.items()]
-#     hw_table = Table(hw_data, colWidths=[150, 330])
-#     hw_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black)]))
-#     elements.append(hw_table)
-#     elements.append(Spacer(1, 12))
-
-#     apps = safe_json(r[6])
-#     apps_data = [["Name","Version","Size","Install Date"]]
-#     for a in apps:
-#         apps_data.append([
-#             a.get("name"), a.get("version"),
-#             a.get("size"), a.get("install_date")
-#         ])
-
-#     app_table = Table(apps_data, colWidths=[180,100,80,120])
-#     app_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black)]))
-#     elements.append(app_table)
-
-#     doc.build(elements)
-#     return send_file(path, as_attachment=True, mimetype="application/pdf")
-
-# if __name__ == "__main__":
-#     init_db()
-#     app.run(host="0.0.0.0", port=5000)
-
-
-
-
-
-
-
-
-import os, json, tempfile, datetime, csv
-import psycopg2
-from flask import Flask, request, jsonify, send_file, render_template
+import os, json, datetime, psycopg2, tempfile, csv
+from flask import Flask, jsonify, render_template, send_file, request, Response
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 
-app = Flask(__name__)
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+app = Flask(__name__, template_folder="templates")
 
-def safe_json(v):
-    if not v:
-        return []
-    try:
-        return json.loads(v)
-    except:
-        return []
+# ---------------- DATABASE ----------------
+def get_db():
+    return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
 
 def init_db():
     con = get_db()
@@ -1186,67 +1009,90 @@ def init_db():
     con.commit()
     con.close()
 
+# ---------------- HELPERS ----------------
+def safe_json(v):
+    try:
+        return json.loads(v)
+    except:
+        return v
+
+def status_from_last_seen(ts):
+    try:
+        t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        return "Online" if (datetime.datetime.now() - t).seconds <= 60 else "Offline"
+    except:
+        return "Offline"
+
+# ---------------- ROUTES ----------------
 @app.route("/")
-def index():
+def dashboard():
     return render_template("dashboard.html")
 
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
+    ip = request.remote_addr
+
     con = get_db()
     cur = con.cursor()
-
-    cur.execute("SELECT client_uuid FROM clients WHERE client_uuid=%s", (data["uuid"],))
-    exists = cur.fetchone()
-
-    payload = (
-        data["mac"], data["hostname"],
-        datetime.datetime.utcnow().isoformat(),
-        request.remote_addr,
-        json.dumps(data["hardware"]),
-        json.dumps(data["apps"]),
-        data["uuid"]
-    )
-
-    if exists:
-        cur.execute("""
-        UPDATE clients SET mac_address=%s, hostname=%s, last_seen=%s,
-        client_ip=%s, hardware_info=%s, installed_apps=%s
-        WHERE client_uuid=%s
-        """, payload)
-    else:
-        cur.execute("""
-        INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
-        """, (data["uuid"], *payload[:-1]))
-
+    cur.execute("""
+    INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
+    ON CONFLICT(client_uuid) DO UPDATE SET
+        mac_address=EXCLUDED.mac_address,
+        hostname=EXCLUDED.hostname,
+        last_seen=EXCLUDED.last_seen,
+        client_ip=EXCLUDED.client_ip,
+        hardware_info=EXCLUDED.hardware_info,
+        installed_apps=EXCLUDED.installed_apps
+    """, (
+        data["uuid"], data["mac"], data["hostname"],
+        data["timestamp"], ip, data["hardware"], data["apps"]
+    ))
     con.commit()
     con.close()
     return jsonify({"status": "ok"})
 
 @app.route("/api/clients")
 def api_clients():
+    search = request.args.get("search")
     con = get_db()
     cur = con.cursor()
-    cur.execute("SELECT * FROM clients")
+    if search:
+        cur.execute("""
+        SELECT * FROM clients
+        WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s
+        """, (f"%{search}%", f"%{search}%", f"%{search}%"))
+    else:
+        cur.execute("SELECT * FROM clients")
     rows = cur.fetchall()
     con.close()
+    return jsonify([{
+        "uuid": r[0],
+        "mac": r[1],
+        "hostname": r[2],
+        "last_seen": r[3],
+        "ip": r[4],
+        "status": status_from_last_seen(r[3])
+    } for r in rows])
 
-    result = []
-    for r in rows:
-        last_seen = datetime.datetime.fromisoformat(r[3])
-        online = (datetime.datetime.utcnow() - last_seen).seconds < 120
-
-        result.append({
-            "uuid": r[0],
-            "mac": r[1],
-            "hostname": r[2],
-            "last_seen": r[3],
-            "ip": r[4],
-            "hardware": json.loads(r[5]),
-            "apps": safe_json(r[6]),
-            "online": online
-        })
-    return jsonify(result)
+@app.route("/api/client/<uuid>")
+def api_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
+    con.close()
+    if not r:
+        return jsonify({"error": "Client not found"}), 404
+    return jsonify({
+        "uuid": r[0],
+        "mac": r[1],
+        "hostname": r[2],
+        "last_seen": r[3],
+        "ip": r[4],
+        "hardware": safe_json(r[5]),
+        "apps": safe_json(r[6])
+    })
 
 @app.route("/export/pdf/<uuid>")
 def export_pdf(uuid):
@@ -1255,53 +1101,58 @@ def export_pdf(uuid):
     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
     r = cur.fetchone()
     con.close()
+    if not r:
+        return "Client not found", 404
 
     fd, path = tempfile.mkstemp(suffix=".pdf")
     os.close(fd)
 
-    styles = getSampleStyleSheet()
     doc = SimpleDocTemplate(path, pagesize=A4)
-    elements = [Paragraph("Client Report", styles["Title"]), Spacer(1,12)]
+    styles = getSampleStyleSheet()
+    elements = []
 
-    hw = json.loads(r[5])
-    hw_data = [["Field","Value"]] + [[Paragraph(k,styles["Normal"]), Paragraph(str(v),styles["Normal"])] for k,v in hw.items()]
-    elements.append(Table(hw_data, colWidths=[150,330], style=[('GRID',(0,0),(-1,-1),.5,colors.black)]))
+    elements.append(Paragraph("Client Report", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    # Hardware Table
+    hw = safe_json(r[5])
+    hw_data = [["Field", "Value"]] + [[k, str(v)] for k, v in hw.items()]
+    hw_table = Table(hw_data, colWidths=[120, 350])
+    hw_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black),
+                                  ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)]))
+    elements.append(Paragraph("Hardware Info", styles["Heading2"]))
+    elements.append(hw_table)
     elements.append(Spacer(1,12))
 
-    apps = json.loads(r[6])
-    app_data = [["Name","Version","Size","Install Date"]]
-    for a in apps:
-        app_data.append([
-            Paragraph(a.get("name","N/A"), styles["Normal"]),
-            Paragraph(a.get("version","N/A"), styles["Normal"]),
-            Paragraph(a.get("size","N/A"), styles["Normal"]),
-            Paragraph(a.get("install_date","N/A"), styles["Normal"])
-        ])
+    # Installed Apps Table
+    apps = safe_json(r[6])
+    apps_data = [["Installed Apps"]] + [[a] for a in apps]
+    apps_table = Table(apps_data, colWidths=[470])
+    apps_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black),
+                                    ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)]))
+    elements.append(Paragraph("Installed Apps", styles["Heading2"]))
+    elements.append(apps_table)
 
-    elements.append(Table(app_data, colWidths=[180,100,80,120], style=[('GRID',(0,0),(-1,-1),.5,colors.black)]))
     doc.build(elements)
+    return send_file(path, as_attachment=True, mimetype="application/pdf", download_name=f"{uuid}.pdf")
 
-    return send_file(path, as_attachment=True, download_name=f"{uuid}.pdf")
-
-@app.route("/export/csv/<uuid>")
-def export_csv(uuid):
+@app.route("/export/csv")
+def export_csv():
     con = get_db()
     cur = con.cursor()
-    cur.execute("SELECT installed_apps FROM clients WHERE client_uuid=%s", (uuid,))
-    apps = json.loads(cur.fetchone()[0])
+    cur.execute("SELECT client_uuid, mac_address, hostname, last_seen, client_ip FROM clients")
+    rows = cur.fetchall()
     con.close()
 
-    fd, path = tempfile.mkstemp(suffix=".csv")
-    os.close(fd)
+    def generate():
+        yield "UUID,MAC,Hostname,Last Seen,IP\n"
+        for r in rows:
+            yield f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]}\n"
 
-    with open(path,"w",newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["Name","Version","Size","Install Date"])
-        for a in apps:
-            writer.writerow([a["name"],a["version"],a["size"],a["install_date"]])
+    return Response(generate(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment;filename=clients.csv"})
 
-    return send_file(path, as_attachment=True, download_name=f"{uuid}.csv")
-
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
