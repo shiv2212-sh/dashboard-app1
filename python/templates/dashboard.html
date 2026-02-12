@@ -606,277 +606,219 @@
 
 
 
-<!-- 
+
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <title>Client Dashboard</title>
 <style>
-body.dark { background-color: #121212; color: #e0e0e0; font-family: Arial, sans-serif; }
-body.light { background-color: #f0f0f0; color: #121212; font-family: Arial, sans-serif; }
-.container { width: 90%; margin: 20px auto; }
-h1 { text-align: center; }
-.toolbar { margin-bottom: 15px; display: flex; justify-content: space-between; flex-wrap: wrap; gap:10px; }
-.toolbar input[type="text"] { width: 200px; padding: 5px; border-radius: 4px; border: 1px solid #555; background-color: #1e1e1e; color: #e0e0e0; }
-body.light .toolbar input[type="text"] { background-color: #fff; color: #121212; border: 1px solid #ccc; }
-.toolbar button { padding: 5px 10px; border-radius: 4px; border: none; background-color: #3a3a3a; color: #fff; cursor: pointer; }
-body.light .toolbar button { background-color: #e0e0e0; color: #121212; }
-.toolbar button:hover { background-color: #555; }
-body.light .toolbar button:hover { background-color: #ccc; }
-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-table th, table td { padding: 8px; text-align: left; border: 1px solid #555; }
-body.light table th, body.light table td { border: 1px solid #ccc; }
-table th { background-color: #1e1e1e; }
-body.light table th { background-color: #ddd; }
-table tr:nth-child(even) { background-color: #1a1a1a; }
-body.light table tr:nth-child(even) { background-color: #f5f5f5; }
-table tr:hover { background-color: #333; }
-body.light table tr:hover { background-color: #ccc; }
-button.view-btn { padding: 3px 6px; margin-right: 5px; border: none; border-radius: 3px; cursor: pointer; background-color: #007bff; color: #fff; }
-button.view-btn:hover { background-color: #0056b3; }
-a.pdf-link { color: #ff9800; text-decoration: none; }
-a.pdf-link:hover { text-decoration: underline; }
-#detail-view { display: none; margin-top: 20px; }
-#detail-view h2 { margin-bottom: 10px; }
-#detail-view table { margin-top: 10px; }
-#app-search { width: 300px; padding: 5px; margin: 10px 0; border-radius: 4px; border: 1px solid #555; background-color: #1e1e1e; color: #e0e0e0; }
-body.light #app-search { background-color: #fff; color: #121212; border: 1px solid #ccc; }
+    body.dark { background-color: #121212; color: #e0e0e0; font-family: Arial, sans-serif; }
+    body.light { background-color: #f0f0f0; color: #121212; font-family: Arial, sans-serif; }
+    .container { width: 90%; margin: 20px auto; }
+    h1 { text-align: center; }
+    .toolbar { margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap:10px; }
+    .toolbar input[type="text"] { width: 200px; padding: 5px; border-radius: 4px; border: 1px solid #555; background-color: #1e1e1e; color: #e0e0e0; }
+    body.light .toolbar input[type="text"] { background-color: #fff; color: #121212; border: 1px solid #ccc; }
+    .toolbar button { padding: 5px 10px; border-radius: 4px; border: none; background-color: #3a3a3a; color: #fff; cursor: pointer; }
+    body.light .toolbar button { background-color: #e0e0e0; color: #121212; }
+    .toolbar button:hover { background-color: #555; }
+    body.light .toolbar button:hover { background-color: #ccc; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    table th, table td { padding: 8px; text-align: left; border: 1px solid #555; }
+    body.light table th, body.light table td { border: 1px solid #ccc; }
+    table th { background-color: #1e1e1e; }
+    body.light table th { background-color: #ddd; }
+    table tr:nth-child(even) { background-color: #1a1a1a; }
+    body.light table tr:nth-child(even) { background-color: #f5f5f5; }
+    table tr:hover { background-color: #333; }
+    body.light table tr:hover { background-color: #ccc; }
+    button.view-btn { padding: 3px 6px; margin-right: 5px; border: none; border-radius: 3px; cursor: pointer; background-color: #007bff; color: #fff; }
+    button.view-btn:hover { background-color: #0056b3; }
+    a.pdf-link { color: #ff9800; text-decoration: none; }
+    a.pdf-link:hover { text-decoration: underline; }
+    #detail-view { display: none; margin-top: 20px; }
+    #detail-view h2 { margin-bottom: 10px; }
+    #detail-view table { margin-top: 10px; }
+    #app-search { width: 300px; padding: 5px; margin: 10px 0; border-radius: 4px; border: 1px solid #555; background-color: #1e1e1e; color: #e0e0e0; }
+    body.light #app-search { background-color: #fff; color: #121212; border: 1px solid #ccc; }
 </style>
 </head>
 <body class="dark">
 <div class="container">
 
-<div id="main-dashboard">
-<h1>Client Monitoring Dashboard</h1>
-<div class="toolbar">
-<input type="text" id="search" placeholder="Search clients...">
-<div>
-<button onclick="exportCSV()">Export CSV</button>
-<button id="toggle-theme">Toggle Dark/Light</button>
-</div>
-</div>
-
-<table>
-<thead>
-<tr>
-<th>UUID</th>
-<th>MAC</th>
-<th>Hostname</th>
-<th>IP</th>
-<th>Last Seen</th>
-<th>Status</th>
-<th>Actions</th>
-</tr>
-</thead>
-<tbody id="clients-body"></tbody>
-</table>
-</div>
-
-<div id="detail-view">
-<h2>Client Details</h2>
-<div class="toolbar">
-<button onclick="backToDashboard()">Back</button>
-<button onclick="goHome()">Home</button>
-<a href="#" id="pdf-link" target="_blank">Export PDF</a>
-<button id="toggle-theme-detail">Toggle Dark/Light</button>
-</div>
-
-<h3>Hardware Info</h3>
-<table>
-<tbody id="hardware-body"></tbody>
-</table>
-
-<h3>Installed Applications</h3>
-<input type="text" id="app-search" placeholder="Search installed apps...">
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>Version</th>
-<th>Install Date</th>
-<th>Size (MB)</th>
-</tr>
-</thead>
-<tbody id="apps-body"></tbody>
-</table>
-</div>
-
-</div>
-<script>
-async function loadClients(search="") {
-try {
-const res = await fetch(`/api/clients?search=${encodeURIComponent(search)}`);
-const data = await res.json();
-const tbody = document.getElementById("clients-body");
-tbody.innerHTML = "";
-if (!data.length) { tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No clients found</td></tr>`; return; }
-data.forEach(c => {
-const tr = document.createElement("tr");
-tr.innerHTML = `<td>${c.uuid}</td><td>${c.mac}</td><td>${c.hostname}</td><td>${c.ip}</td><td>${c.last_seen}</td><td>${c.status}</td>
-<td><button class="view-btn" onclick="viewClient('${c.uuid}')">View</button>
-<a class="pdf-link" href="/export/pdf/${c.uuid}" target="_blank">PDF</a></td>`;
-tbody.appendChild(tr);
-});
-} catch(err) { console.error("Error loading clients:", err); }
-}
-
-function exportCSV(){ window.location.href="/export/csv"; }
-
-async function viewClient(uuid){
-try {
-const res = await fetch(`/api/client/${uuid}`);
-const data = await res.json();
-if(data.error){ alert(data.error); return; }
-document.getElementById("main-dashboard").style.display="none";
-document.getElementById("detail-view").style.display="block";
-
-// Hardware
-const hardwareBody=document.getElementById("hardware-body");
-hardwareBody.innerHTML="";
-for(const [k,v] of Object.entries(data.hardware)){
-const tr=document.createElement("tr");
-tr.innerHTML=`<th>${k}</th><td>${v}</td>`;
-hardwareBody.appendChild(tr);
-}
-
-// Apps
-const appsBody=document.getElementById("apps-body");
-appsBody.innerHTML="";
-data.apps.forEach(app=>{
-const tr=document.createElement("tr");
-tr.innerHTML=`<td>${app.name||''}</td><td>${app.version||''}</td><td>${app.install_date||''}</td><td>${app.size_mb||0}</td>`;
-appsBody.appendChild(tr);
-});
-
-// PDF link
-document.getElementById("pdf-link").href=`/export/pdf/${uuid}`;
-
-// App search
-const appSearch=document.getElementById("app-search");
-appSearch.value="";
-appSearch.oninput=()=>{
-const query=appSearch.value.toLowerCase();
-document.querySelectorAll("#apps-body tr").forEach(row=>{
-row.style.display=row.innerText.toLowerCase().includes(query)?"":"none";
-});
-};
-}catch(err){ console.error("Error viewing client:", err);}
-}
-
-function backToDashboard(){ document.getElementById("detail-view").style.display="none"; document.getElementById("main-dashboard").style.display="block"; }
-function goHome(){ backToDashboard(); }
-
-function toggleTheme(){
-const body=document.body;
-if(body.classList.contains("dark")){ body.classList.remove("dark"); body.classList.add("light"); }
-else{ body.classList.remove("light"); body.classList.add("dark"); }
-}
-
-document.addEventListener("DOMContentLoaded",()=>{
-loadClients();
-document.getElementById("search").addEventListener("input",(e)=>loadClients(e.target.value));
-setInterval(()=>loadClients(document.getElementById("search").value),15000);
-document.getElementById("toggle-theme").addEventListener("click",toggleTheme);
-document.getElementById("toggle-theme-detail").addEventListener("click",toggleTheme);
-});
-</script>
-</body>
-</html> -->
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-<!DOCTYPE html>
-<html>
-<head>
-<title>Client Dashboard</title>
-<style>
-body{font-family:Arial;background:#f4f6f9;margin:20px}
-body.dark{background:#121212;color:#eee}
-.client{background:#fff;padding:15px;border-radius:8px;margin-bottom:20px}
-body.dark .client{background:#1e1e1e}
-.online{color:lime;font-weight:bold}
-.offline{color:red;font-weight:bold}
-table{width:100%;border-collapse:collapse;margin-top:8px}
-th,td{border:1px solid #ccc;padding:6px}
-.top{display:flex;justify-content:space-between}
-</style>
-</head>
-<body>
-
-<div class="top">
-<input id="search" placeholder="Search Client..." onkeyup="loadClients()">
-<button onclick="toggleDark()">🌙 Dark Mode</button>
-</div>
-
-<div id="clients"></div>
-
-<script>
-let dark = localStorage.getItem("dark")==="1";
-if(dark) document.body.classList.add("dark");
-
-function toggleDark(){
-  dark=!dark;
-  localStorage.setItem("dark",dark?"1":"0");
-  document.body.classList.toggle("dark");
-}
-
-async function loadClients(){
-  const q = document.getElementById("search").value.toLowerCase();
-  const res = await fetch("/api/clients");
-  const data = await res.json();
-  const box = document.getElementById("clients");
-  box.innerHTML="";
-
-  data.filter(c=>c.hostname.toLowerCase().includes(q)||c.uuid.includes(q))
-  .forEach(c=>{
-    let appRows="";
-    c.apps.forEach(a=>{
-      appRows+=`<tr><td>${a.name}</td><td>${a.version}</td><td>${a.size}</td><td>${a.install_date}</td></tr>`;
-    });
-
-    box.innerHTML+=`
-    <div class="client">
-      <div class="top">
-        <h2>${c.hostname} (${c.online?'<span class=online>ONLINE</span>':'<span class=offline>OFFLINE</span>'})</h2>
-        <div>
-          <button onclick="location='/export/pdf/${c.uuid}'">PDF</button>
-          <button onclick="location='/export/csv/${c.uuid}'">CSV</button>
+    <!-- MAIN DASHBOARD -->
+    <div id="main-dashboard">
+        <h1>Client Monitoring Dashboard</h1>
+        <div class="toolbar">
+            <input type="text" id="search" placeholder="Search clients...">
+            <div>
+                <button onclick="exportCSV()">Export CSV</button>
+                <button id="toggle-theme">Toggle Dark/Light</button>
+            </div>
         </div>
-      </div>
 
-      <input placeholder="Search app..." onkeyup="filterApps(this)">
+        <table>
+            <thead>
+            <tr>
+                <th>UUID</th>
+                <th>MAC</th>
+                <th>Hostname</th>
+                <th>IP</th>
+                <th>Last Seen</th>
+                <th>Status</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody id="clients-body"></tbody>
+        </table>
+    </div>
 
-      <table>
-        <tr><th>Name</th><th>Version</th><th>Size</th><th>Date</th></tr>
-        ${appRows}
-      </table>
-    </div>`;
-  });
+    <!-- CLIENT DETAIL VIEW -->
+    <div id="detail-view">
+        <h2>Client Details</h2>
+        <div class="toolbar">
+            <button onclick="backToDashboard()">Back</button>
+            <button onclick="goHome()">Home</button>
+            <a href="#" id="pdf-link" target="_blank">Export PDF</a>
+            <button id="toggle-theme-detail">Toggle Dark/Light</button>
+        </div>
+
+        <h3>Hardware Info</h3>
+        <table>
+            <tbody id="hardware-body"></tbody>
+        </table>
+
+        <h3>Installed Applications</h3>
+        <input type="text" id="app-search" placeholder="Search installed apps...">
+        <table>
+            <thead>
+            <tr>
+                <th>Name</th>
+                <th>Version</th>
+                <th>Size</th>
+                <th>Install Date</th>
+                <th>History</th>
+            </tr>
+            </thead>
+            <tbody id="apps-body"></tbody>
+        </table>
+    </div>
+
+</div>
+
+<script>
+async function loadClients(search = "") {
+    try {
+        const res = await fetch(`/api/clients?search=${encodeURIComponent(search)}`);
+        const data = await res.json();
+        const tbody = document.getElementById("clients-body");
+        tbody.innerHTML = "";
+
+        if (!data.length) {
+            tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No clients found</td></tr>`;
+            return;
+        }
+
+        data.forEach(c => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${c.uuid}</td>
+                <td>${c.mac}</td>
+                <td>${c.hostname}</td>
+                <td>${c.ip}</td>
+                <td>${c.last_seen}</td>
+                <td>${c.status}</td>
+                <td>
+                    <button class="view-btn" onclick="viewClient('${c.uuid}')">View</button>
+                    <a class="pdf-link" href="/export/pdf/${c.uuid}" target="_blank">PDF</a>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (err) { console.error("Error loading clients:", err); }
 }
 
-function filterApps(input){
-  const val=input.value.toLowerCase();
-  const rows=input.nextElementSibling.querySelectorAll("tr");
-  rows.forEach((r,i)=>{
-    if(i===0) return;
-    r.style.display = r.innerText.toLowerCase().includes(val) ? "" : "none";
-  });
+function exportCSV() { window.location.href = "/export/csv"; }
+
+async function viewClient(uuid) {
+    try {
+        const res = await fetch(`/api/client/${uuid}`);
+        const data = await res.json();
+        if (data.error) { alert(data.error); return; }
+
+        document.getElementById("main-dashboard").style.display = "none";
+        document.getElementById("detail-view").style.display = "block";
+
+        // Hardware table
+        const hardwareBody = document.getElementById("hardware-body");
+        hardwareBody.innerHTML = "";
+        for (const [key, value] of Object.entries(data.hardware)) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `<th>${key}</th><td>${value}</td>`;
+            hardwareBody.appendChild(tr);
+        }
+
+        // Apps table
+        const appsBody = document.getElementById("apps-body");
+        appsBody.innerHTML = "";
+        data.apps.forEach(app => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${app.name || "N/A"}</td>
+                <td>${app.version || "N/A"}</td>
+                <td>${app.size || "N/A"}</td>
+                <td>${app.install_date || data.last_seen}</td>
+                <td><button class="view-btn" onclick='showAppHistory("${app.name}")'>History</button></td>
+            `;
+            appsBody.appendChild(tr);
+        });
+
+        document.getElementById("pdf-link").href = `/export/pdf/${uuid}`;
+
+        // App search filter
+        const appSearch = document.getElementById("app-search");
+        appSearch.value = "";
+        appSearch.oninput = () => {
+            const query = appSearch.value.toLowerCase();
+            const rows = document.querySelectorAll("#apps-body tr");
+            rows.forEach(row => { row.style.display = row.innerText.toLowerCase().includes(query) ? "" : "none"; });
+        };
+    } catch (err) { console.error("Error viewing client:", err); }
 }
 
-loadClients();
-setInterval(loadClients,30000);
+function showAppHistory(appName) {
+    // Mock history (replace with real API call later)
+    const mockHistory = [
+        `Installed on 2026-02-01`,
+        `Updated to version 2.0 on 2026-02-05`,
+        `Patched on 2026-02-07`
+    ];
+    alert(`History for ${appName}:\n\n${mockHistory.join("\n")}`);
+}
+
+function backToDashboard() {
+    document.getElementById("detail-view").style.display = "none";
+    document.getElementById("main-dashboard").style.display = "block";
+}
+
+function goHome() { backToDashboard(); }
+
+function toggleTheme() {
+    const body = document.body;
+    body.classList.toggle("dark");
+    body.classList.toggle("light");
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+    loadClients();
+    document.getElementById("search").addEventListener("input", (e) => loadClients(e.target.value));
+    setInterval(() => loadClients(document.getElementById("search").value), 15000);
+
+    document.getElementById("toggle-theme").addEventListener("click", toggleTheme);
+    document.getElementById("toggle-theme-detail").addEventListener("click", toggleTheme);
+});
 </script>
 </body>
 </html>
