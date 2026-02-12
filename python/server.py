@@ -647,6 +647,157 @@
 
 
 
+# import os, json, datetime, psycopg2, tempfile
+# from flask import Flask, jsonify, render_template, send_file, request, Response
+# from reportlab.lib.pagesizes import A4
+# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+# from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.lib import colors
+
+# DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# app = Flask(__name__, template_folder="templates")
+
+# # ---------- DB ----------
+# def get_db():
+#     return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+# def init_db():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#     CREATE TABLE IF NOT EXISTS clients (
+#         uuid TEXT PRIMARY KEY,
+#         mac TEXT,
+#         hostname TEXT,
+#         ip TEXT,
+#         last_seen TIMESTAMP,
+#         hardware_info TEXT,
+#         installed_apps TEXT
+#     )
+#     """)
+#     con.commit()
+#     con.close()
+
+# def safe_json(v):
+#     try:
+#         return json.loads(v)
+#     except:
+#         return []
+
+# def parse_ts(ts):
+#     if isinstance(ts, datetime.datetime):
+#         return ts
+#     try:
+#         return datetime.datetime.fromisoformat(str(ts))
+#     except:
+#         return datetime.datetime.utcnow()
+
+# # ---------- ROUTES ----------
+# @app.route("/")
+# def dashboard():
+#     return render_template("dashboard.html")
+
+# @app.route("/api/report", methods=["POST"])
+# def api_report():
+#     data = request.get_json(force=True)
+#     ip = request.remote_addr
+#     now = datetime.datetime.utcnow()
+
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#     INSERT INTO clients (uuid, mac, hostname, ip, last_seen, hardware_info, installed_apps)
+#     VALUES (%s,%s,%s,%s,%s,%s,%s)
+#     ON CONFLICT(uuid) DO UPDATE SET
+#         mac=EXCLUDED.mac,
+#         hostname=EXCLUDED.hostname,
+#         ip=EXCLUDED.ip,
+#         last_seen=EXCLUDED.last_seen,
+#         hardware_info=EXCLUDED.hardware_info,
+#         installed_apps=EXCLUDED.installed_apps
+#     """, (
+#         data["uuid"],
+#         data["mac"],
+#         data["hostname"],
+#         ip,
+#         now,
+#         data["hardware"],
+#         data["apps"]
+#     ))
+#     con.commit()
+#     con.close()
+
+#     return jsonify({"status": "ok"})
+
+# @app.route("/api/clients")
+# def api_clients():
+#     search = request.args.get("search","")
+#     con = get_db()
+#     cur = con.cursor()
+
+#     if search:
+#         cur.execute("""
+#         SELECT uuid, mac, hostname, ip, last_seen
+#         FROM clients
+#         WHERE uuid ILIKE %s OR hostname ILIKE %s OR mac ILIKE %s
+#         ORDER BY last_seen DESC
+#         """,(f"%{search}%",f"%{search}%",f"%{search}%"))
+#     else:
+#         cur.execute("SELECT uuid, mac, hostname, ip, last_seen FROM clients ORDER BY last_seen DESC")
+
+#     rows = cur.fetchall()
+#     con.close()
+
+#     now = datetime.datetime.utcnow()
+#     out = []
+#     for r in rows:
+#         ts = parse_ts(r[4])
+#         status = "Online" if (now-ts).total_seconds() < 60 else "Offline"
+#         out.append({
+#             "uuid": r[0],
+#             "mac": r[1],
+#             "hostname": r[2],
+#             "ip": r[3],
+#             "last_seen": ts.strftime("%Y-%m-%d %H:%M:%S"),
+#             "status": status
+#         })
+#     return jsonify(out)
+
+# @app.route("/api/client/<uuid>")
+# def api_client(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT * FROM clients WHERE uuid=%s",(uuid,))
+#     r = cur.fetchone()
+#     con.close()
+
+#     if not r:
+#         return jsonify({"error":"Client not found"}),404
+
+#     return jsonify({
+#         "uuid":r[0],
+#         "mac":r[1],
+#         "hostname":r[2],
+#         "ip":r[3],
+#         "last_seen":parse_ts(r[4]).strftime("%Y-%m-%d %H:%M:%S"),
+#         "hardware":safe_json(r[5]),
+#         "apps":safe_json(r[6])
+#     })
+
+# # ---------- RUN ----------
+# if __name__ == "__main__":
+#     init_db()
+#     app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
+
+
+
+
+
+
+
+
+
 import os, json, datetime, psycopg2, tempfile
 from flask import Flask, jsonify, render_template, send_file, request, Response
 from reportlab.lib.pagesizes import A4
@@ -658,20 +809,20 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__, template_folder="templates")
 
-# ---------- DB ----------
+# ---------------- DATABASE ----------------
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
 
 def init_db():
     con = get_db()
     cur = con.cursor()
     cur.execute("""
     CREATE TABLE IF NOT EXISTS clients (
-        uuid TEXT PRIMARY KEY,
-        mac TEXT,
+        client_uuid TEXT PRIMARY KEY,
+        mac_address TEXT,
         hostname TEXT,
-        ip TEXT,
-        last_seen TIMESTAMP,
+        last_seen TEXT,
+        client_ip TEXT,
         hardware_info TEXT,
         installed_apps TEXT
     )
@@ -679,52 +830,82 @@ def init_db():
     con.commit()
     con.close()
 
+# ---------------- HELPERS ----------------
 def safe_json(v):
+    if not v:
+        return []
     try:
         return json.loads(v)
     except:
         return []
 
-def parse_ts(ts):
-    if isinstance(ts, datetime.datetime):
-        return ts
+def status_from_last_seen(ts):
     try:
-        return datetime.datetime.fromisoformat(str(ts))
+        t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        return "Online" if (datetime.datetime.now() - t).total_seconds() <= 60 else "Offline"
     except:
-        return datetime.datetime.utcnow()
+        return "Offline"
 
-# ---------- ROUTES ----------
+def merge_app_history(old_apps, new_apps):
+    old_dict = {a["name"]: a for a in old_apps}
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for app in new_apps:
+        name = app.get("name")
+        version = app.get("version")
+
+        if name in old_dict:
+            old_version = old_dict[name].get("version")
+            history = old_dict[name].get("history", [])
+
+            if old_version != version:
+                history.append(f"Updated from {old_version} to {version} on {now}")
+            app["history"] = history
+        else:
+            app["history"] = [f"Installed on {now}"]
+
+    return new_apps
+
+# ---------------- ROUTES ----------------
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
 @app.route("/api/report", methods=["POST"])
 def api_report():
-    data = request.get_json(force=True)
+    data = request.json
     ip = request.remote_addr
-    now = datetime.datetime.utcnow()
 
     con = get_db()
     cur = con.cursor()
+
+    cur.execute("SELECT installed_apps FROM clients WHERE client_uuid=%s", (data["uuid"],))
+    existing = cur.fetchone()
+
+    old_apps = safe_json(existing[0]) if existing else []
+    new_apps = safe_json(data["apps"])
+
+    merged_apps = merge_app_history(old_apps, new_apps)
+
     cur.execute("""
-    INSERT INTO clients (uuid, mac, hostname, ip, last_seen, hardware_info, installed_apps)
-    VALUES (%s,%s,%s,%s,%s,%s,%s)
-    ON CONFLICT(uuid) DO UPDATE SET
-        mac=EXCLUDED.mac,
+    INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
+    ON CONFLICT(client_uuid) DO UPDATE SET
+        mac_address=EXCLUDED.mac_address,
         hostname=EXCLUDED.hostname,
-        ip=EXCLUDED.ip,
         last_seen=EXCLUDED.last_seen,
+        client_ip=EXCLUDED.client_ip,
         hardware_info=EXCLUDED.hardware_info,
         installed_apps=EXCLUDED.installed_apps
     """, (
         data["uuid"],
         data["mac"],
         data["hostname"],
+        data["timestamp"],
         ip,
-        now,
         data["hardware"],
-        data["apps"]
+        json.dumps(merged_apps)
     ))
+
     con.commit()
     con.close()
 
@@ -732,60 +913,52 @@ def api_report():
 
 @app.route("/api/clients")
 def api_clients():
-    search = request.args.get("search","")
+    search = request.args.get("search")
     con = get_db()
     cur = con.cursor()
 
     if search:
         cur.execute("""
-        SELECT uuid, mac, hostname, ip, last_seen
-        FROM clients
-        WHERE uuid ILIKE %s OR hostname ILIKE %s OR mac ILIKE %s
-        ORDER BY last_seen DESC
-        """,(f"%{search}%",f"%{search}%",f"%{search}%"))
+        SELECT * FROM clients
+        WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s
+        """, (f"%{search}%", f"%{search}%", f"%{search}%"))
     else:
-        cur.execute("SELECT uuid, mac, hostname, ip, last_seen FROM clients ORDER BY last_seen DESC")
+        cur.execute("SELECT * FROM clients")
 
     rows = cur.fetchall()
     con.close()
 
-    now = datetime.datetime.utcnow()
-    out = []
-    for r in rows:
-        ts = parse_ts(r[4])
-        status = "Online" if (now-ts).total_seconds() < 60 else "Offline"
-        out.append({
-            "uuid": r[0],
-            "mac": r[1],
-            "hostname": r[2],
-            "ip": r[3],
-            "last_seen": ts.strftime("%Y-%m-%d %H:%M:%S"),
-            "status": status
-        })
-    return jsonify(out)
+    return jsonify([{
+        "uuid": r[0],
+        "mac": r[1],
+        "hostname": r[2],
+        "last_seen": r[3],
+        "ip": r[4],
+        "status": status_from_last_seen(r[3])
+    } for r in rows])
 
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
     con = get_db()
     cur = con.cursor()
-    cur.execute("SELECT * FROM clients WHERE uuid=%s",(uuid,))
+    cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
     r = cur.fetchone()
     con.close()
 
     if not r:
-        return jsonify({"error":"Client not found"}),404
+        return jsonify({"error": "Client not found"}), 404
 
     return jsonify({
-        "uuid":r[0],
-        "mac":r[1],
-        "hostname":r[2],
-        "ip":r[3],
-        "last_seen":parse_ts(r[4]).strftime("%Y-%m-%d %H:%M:%S"),
-        "hardware":safe_json(r[5]),
-        "apps":safe_json(r[6])
+        "uuid": r[0],
+        "mac": r[1],
+        "hostname": r[2],
+        "last_seen": r[3],
+        "ip": r[4],
+        "hardware": safe_json(r[5]),
+        "apps": safe_json(r[6])
     })
 
-# ---------- RUN ----------
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT",10000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
