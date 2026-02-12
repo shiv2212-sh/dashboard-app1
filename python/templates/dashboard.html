@@ -905,102 +905,86 @@ async function loadClients(search = "") {
         const tbody = document.getElementById("clients-body");
         tbody.innerHTML = "";
 
-        if (!Array.isArray(data) || data.length === 0) {
+        if (!data.length) {
             tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;">No clients found</td></tr>`;
             return;
         }
 
         data.forEach(c => {
-            const uuid = c.uuid || c.client_id || "";
             const tr = document.createElement("tr");
             tr.innerHTML = `
-                <td>${uuid}</td>
-                <td>${c.mac || "N/A"}</td>
-                <td>${c.hostname || "N/A"}</td>
-                <td>${c.ip || c.ip_address || "N/A"}</td>
-                <td>${c.last_seen || "N/A"}</td>
-                <td>${c.status || "Unknown"}</td>
+                <td>${c.uuid}</td>
+                <td>${c.mac}</td>
+                <td>${c.hostname}</td>
+                <td>${c.ip}</td>
+                <td>${c.last_seen}</td>
+                <td>${c.status}</td>
                 <td>
-                    <button class="view-btn" onclick="viewClient('${uuid}')">View</button>
-                    <a class="pdf-link" href="/export/pdf/${uuid}" target="_blank">PDF</a>
+                    <button class="view-btn" onclick="viewClient('${c.uuid}')">View</button>
+                    <a class="pdf-link" href="/export/pdf/${c.uuid}" target="_blank">PDF</a>
                 </td>
             `;
             tbody.appendChild(tr);
         });
-
-    } catch (err) {
-        console.error("Error loading clients:", err);
-    }
+    } catch (err) { console.error("Error loading clients:", err); }
 }
 
-function exportCSV() {
-    window.location.href = "/export/csv";
-}
+function exportCSV() { window.location.href = "/export/csv"; }
 
 async function viewClient(uuid) {
     try {
         const res = await fetch(`/api/client/${uuid}`);
         const data = await res.json();
-
-        if (!data || data.error) {
-            alert(data?.error || "Failed to load client details");
-            return;
-        }
+        if (data.error) { alert(data.error); return; }
 
         document.getElementById("main-dashboard").style.display = "none";
         document.getElementById("detail-view").style.display = "block";
 
-        // Hardware
-        const hardware = data.hardware || data.hardware_info || {};
+        // Hardware table
         const hardwareBody = document.getElementById("hardware-body");
         hardwareBody.innerHTML = "";
-
-        Object.entries(hardware).forEach(([key, value]) => {
+        for (const [key, value] of Object.entries(data.hardware)) {
             const tr = document.createElement("tr");
             tr.innerHTML = `<th>${key}</th><td>${value}</td>`;
             hardwareBody.appendChild(tr);
-        });
+        }
 
-        // Apps
-        const apps = data.apps || data.installed_apps || [];
+        // Apps table
         const appsBody = document.getElementById("apps-body");
         appsBody.innerHTML = "";
-
-        apps.forEach(app => {
+        data.apps.forEach(app => {
             const tr = document.createElement("tr");
             tr.innerHTML = `
                 <td>${app.name || "N/A"}</td>
                 <td>${app.version || "N/A"}</td>
-                <td>${app.size || app.disk_size || "N/A"}</td>
-                <td>${app.install_date || data.last_seen || "N/A"}</td>
-                <td>
-                    <button class="view-btn" onclick='showAppHistory("${app.name || "App"}")'>
-                        History
-                    </button>
-                </td>
+                <td>${app.size || "N/A"}</td>
+                <td>${app.install_date || data.last_seen}</td>
+                <td><button class="view-btn" onclick='showAppHistory("${app.name}")'>History</button></td>
             `;
             appsBody.appendChild(tr);
         });
 
         document.getElementById("pdf-link").href = `/export/pdf/${uuid}`;
 
+        // App search filter
         const appSearch = document.getElementById("app-search");
         appSearch.value = "";
         appSearch.oninput = () => {
             const query = appSearch.value.toLowerCase();
             const rows = document.querySelectorAll("#apps-body tr");
-            rows.forEach(row => {
-                row.style.display = row.innerText.toLowerCase().includes(query) ? "" : "none";
-            });
+            rows.forEach(row => { row.style.display = row.innerText.toLowerCase().includes(query) ? "" : "none"; });
         };
-
-    } catch (err) {
-        console.error("Error viewing client:", err);
-    }
+    } catch (err) { console.error("Error viewing client:", err); }
 }
 
 function showAppHistory(appName) {
-    alert(`History for ${appName} feature ready.`);
+    // Mock history (replace with real API call later)
+    const mockHistory = [
+        `Installed on 2026-02-01`,
+        `Updated to version 2.0 on 2026-02-05`,
+        `Patched on 2026-02-07`
+    ];
+    alert(`History for ${appName}:\n\n${mockHistory.join("\n")}`);
 }
 
 function backToDashboard() {
@@ -1008,9 +992,7 @@ function backToDashboard() {
     document.getElementById("main-dashboard").style.display = "block";
 }
 
-function goHome() {
-    backToDashboard();
-}
+function goHome() { backToDashboard(); }
 
 function toggleTheme() {
     const body = document.body;
