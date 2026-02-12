@@ -1168,185 +1168,182 @@
 
 
 
-
-from flask import Flask, request, jsonify, send_file
-import psycopg2, psycopg2.extras
-import json, datetime, io
-import os
+import os, json, datetime, psycopg2, tempfile, csv
+from flask import Flask, jsonify, render_template, send_file, request, Response
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 app = Flask(__name__, template_folder="templates")
 
+# ---------------- DATABASE ----------------
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
-
+    return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
 
 def init_db():
     con = get_db()
     cur = con.cursor()
     cur.execute("""
-        CREATE TABLE IF NOT EXISTS clients (
-            client_uuid TEXT PRIMARY KEY,
-            mac TEXT,
-            hostname TEXT,
-            last_seen TIMESTAMP,
-            ip TEXT,
-            hardware JSONB,
-            apps JSONB
-        )
+    CREATE TABLE IF NOT EXISTS clients (
+        client_uuid TEXT PRIMARY KEY,
+        mac_address TEXT,
+        hostname TEXT,
+        last_seen TEXT,
+        client_ip TEXT,
+        hardware_info TEXT,
+        installed_apps TEXT
+    )
     """)
     con.commit()
-    cur.close()
     con.close()
 
+# ---------------- HELPERS ----------------
+def safe_json(v):
+    try:
+        return json.loads(v)
+    except:
+        return v
+
+def status_from_last_seen(ts):
+    try:
+        t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+        return "Online" if (datetime.datetime.now() - t).seconds <= 60 else "Offline"
+    except:
+        return "Offline"
+
+# ---------------- ROUTES ----------------
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html")
 
 @app.route("/api/report", methods=["POST"])
 def api_report():
-    data = request.get_json()
+    data = request.json
     ip = request.remote_addr
-
-    if not data:
-        return jsonify({"error": "No JSON received"}), 400
-
-    required = ["uuid", "mac", "hostname", "timestamp", "hardware", "apps"]
-    for r in required:
-        if r not in data:
-            return jsonify({"error": f"Missing {r}"}), 400
 
     con = get_db()
     cur = con.cursor()
-
     cur.execute("""
-        INSERT INTO clients (client_uuid, mac, hostname, last_seen, ip, hardware, apps)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (client_uuid) DO UPDATE SET
-            mac=EXCLUDED.mac,
-            hostname=EXCLUDED.hostname,
-            last_seen=EXCLUDED.last_seen,
-            ip=EXCLUDED.ip,
-            hardware=EXCLUDED.hardware,
-            apps=EXCLUDED.apps
+    INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
+    ON CONFLICT(client_uuid) DO UPDATE SET
+        mac_address=EXCLUDED.mac_address,
+        hostname=EXCLUDED.hostname,
+        last_seen=EXCLUDED.last_seen,
+        client_ip=EXCLUDED.client_ip,
+        hardware_info=EXCLUDED.hardware_info,
+        installed_apps=EXCLUDED.installed_apps
     """, (
-        data["uuid"],
-        data["mac"],
-        data["hostname"],
-        data["timestamp"],
-        ip,
-        json.dumps(data["hardware"]),
-        json.dumps(data["apps"])
+        data["uuid"], data["mac"], data["hostname"],
+        data["timestamp"], ip, data["hardware"], data["apps"]
     ))
-
     con.commit()
-    cur.close()
     con.close()
-
     return jsonify({"status": "ok"})
-
 
 @app.route("/api/clients")
 def api_clients():
-    search = request.args.get("search", "").lower()
-
+    search = request.args.get("search")
     con = get_db()
-    cur = con.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM clients")
+    cur = con.cursor()
+    if search:
+        cur.execute("""
+        SELECT * FROM clients
+        WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s
+        """, (f"%{search}%", f"%{search}%", f"%{search}%"))
+    else:
+        cur.execute("SELECT * FROM clients")
     rows = cur.fetchall()
-    cur.close()
     con.close()
-
-    results = []
-    for r in rows:
-        status = "online" if (datetime.datetime.utcnow() - r["last_seen"]).seconds < 90 else "offline"
-
-        if search and search not in (r["hostname"] or "").lower():
-            continue
-
-        results.append({
-            "uuid": r["client_uuid"],
-            "mac": r["mac"],
-            "hostname": r["hostname"],
-            "last_seen": r["last_seen"].isoformat(),
-            "ip": r["ip"],
-            "status": status
-        })
-
-    return jsonify(results)
-
+    return jsonify([{
+        "uuid": r[0],
+        "mac": r[1],
+        "hostname": r[2],
+        "last_seen": r[3],
+        "ip": r[4],
+        "status": status_from_last_seen(r[3])
+    } for r in rows])
 
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
     con = get_db()
-    cur = con.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur = con.cursor()
     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
     r = cur.fetchone()
-    cur.close()
     con.close()
-
     if not r:
-        return jsonify({"error": "Not found"}), 404
-
+        return jsonify({"error": "Client not found"}), 404
     return jsonify({
-        "uuid": r["client_uuid"],
-        "mac": r["mac"],
-        "hostname": r["hostname"],
-        "last_seen": r["last_seen"].isoformat(),
-        "ip": r["ip"],
-        "hardware": r["hardware"],
-        "apps": r["apps"]
+        "uuid": r[0],
+        "mac": r[1],
+        "hostname": r[2],
+        "last_seen": r[3],
+        "ip": r[4],
+        "hardware": safe_json(r[5]),
+        "apps": safe_json(r[6])
     })
 
+@app.route("/export/pdf/<uuid>")
+def export_pdf(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
+    con.close()
+    if not r:
+        return "Client not found", 404
 
-@app.route("/api/export/csv")
+    fd, path = tempfile.mkstemp(suffix=".pdf")
+    os.close(fd)
+
+    doc = SimpleDocTemplate(path, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    elements.append(Paragraph("Client Report", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    # Hardware Table
+    hw = safe_json(r[5])
+    hw_data = [["Field", "Value"]] + [[k, str(v)] for k, v in hw.items()]
+    hw_table = Table(hw_data, colWidths=[120, 350])
+    hw_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black),
+                                  ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)]))
+    elements.append(Paragraph("Hardware Info", styles["Heading2"]))
+    elements.append(hw_table)
+    elements.append(Spacer(1,12))
+
+    # Installed Apps Table
+    apps = safe_json(r[6])
+    apps_data = [["Installed Apps"]] + [[a] for a in apps]
+    apps_table = Table(apps_data, colWidths=[470])
+    apps_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black),
+                                    ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)]))
+    elements.append(Paragraph("Installed Apps", styles["Heading2"]))
+    elements.append(apps_table)
+
+    doc.build(elements)
+    return send_file(path, as_attachment=True, mimetype="application/pdf", download_name=f"{uuid}.pdf")
+
+@app.route("/export/csv")
 def export_csv():
     con = get_db()
     cur = con.cursor()
-    cur.execute("SELECT client_uuid,hostname,mac,ip,last_seen FROM clients")
+    cur.execute("SELECT client_uuid, mac_address, hostname, last_seen, client_ip FROM clients")
     rows = cur.fetchall()
-    cur.close()
     con.close()
 
-    output = io.StringIO()
-    output.write("UUID,Hostname,MAC,IP,Last Seen\n")
-    for r in rows:
-        output.write(",".join(map(str, r)) + "\n")
+    def generate():
+        yield "UUID,MAC,Hostname,Last Seen,IP\n"
+        for r in rows:
+            yield f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]}\n"
 
-    mem = io.BytesIO()
-    mem.write(output.getvalue().encode("utf-8"))
-    mem.seek(0)
+    return Response(generate(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment;filename=clients.csv"})
 
-    return send_file(mem, mimetype="text/csv", download_name="clients.csv", as_attachment=True)
-
-
-@app.route("/api/export/pdf")
-def export_pdf():
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
-
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT hostname,ip,last_seen FROM clients")
-    rows = cur.fetchall()
-    cur.close()
-    con.close()
-
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    y = 750
-
-    for r in rows:
-        line = f"{r[0]} | {r[1]} | {r[2]}"
-        if y < 50:
-            c.showPage()
-            y = 750
-        c.drawString(40, y, line)
-        y -= 20
-
-    c.save()
-    buffer.seek(0)
-    return send_file(buffer, mimetype="application/pdf", download_name="clients.pdf", as_attachment=True)
-
-
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     init_db()
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
