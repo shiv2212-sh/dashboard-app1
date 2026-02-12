@@ -647,59 +647,53 @@
 
 
 
-import os
-import json
-import datetime
-import psycopg2
+
+import os, json, datetime, psycopg2
 from flask import Flask, request, jsonify, render_template
 
 app = Flask(__name__)
-
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 
-# -----------------------------
-# DATABASE CONNECTION
-# -----------------------------
+# ---------------- DB ----------------
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
-def safe_json(value):
+def safe_json(v):
     try:
-        return json.loads(value) if value else []
+        return json.loads(v) if v else []
     except:
         return []
 
 
-# -----------------------------
-# INIT DATABASE
-# -----------------------------
+# ---------------- INIT ----------------
 def init_db():
     con = get_db()
     cur = con.cursor()
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS clients (
-        uuid TEXT PRIMARY KEY,
+        client_uuid TEXT PRIMARY KEY,
+        mac_address TEXT,
         hostname TEXT,
-        ip TEXT,
-        mac TEXT,
         last_seen TIMESTAMP,
-        hardware TEXT
-    );
+        client_ip TEXT,
+        hardware_info TEXT,
+        installed_apps TEXT
+    )
     """)
 
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS apps (
+    CREATE TABLE IF NOT EXISTS apps_history (
         id SERIAL PRIMARY KEY,
         client_uuid TEXT,
-        name TEXT,
+        app_name TEXT,
         version TEXT,
         size TEXT,
         install_date TEXT,
         history TEXT
-    );
+    )
     """)
 
     con.commit()
@@ -707,190 +701,165 @@ def init_db():
     con.close()
 
 
-# -----------------------------
-# CLIENT REPORT API
-# -----------------------------
+# ---------------- REPORT ----------------
 @app.route("/api/report", methods=["POST"])
 def report():
     try:
         data = request.get_json(force=True)
+        now = datetime.datetime.now()
+
         con = get_db()
         cur = con.cursor()
 
-        now = datetime.datetime.now()
-
-        # Insert or update client
+        # Upsert client
         cur.execute("""
-            INSERT INTO clients (uuid, hostname, ip, mac, last_seen, hardware)
-            VALUES (%s,%s,%s,%s,%s,%s)
-            ON CONFLICT (uuid)
-            DO UPDATE SET
-                hostname = EXCLUDED.hostname,
-                ip = EXCLUDED.ip,
-                mac = EXCLUDED.mac,
-                last_seen = EXCLUDED.last_seen,
-                hardware = EXCLUDED.hardware
+        INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (client_uuid) DO UPDATE SET
+            mac_address=EXCLUDED.mac_address,
+            hostname=EXCLUDED.hostname,
+            last_seen=EXCLUDED.last_seen,
+            client_ip=EXCLUDED.client_ip,
+            hardware_info=EXCLUDED.hardware_info,
+            installed_apps=EXCLUDED.installed_apps
         """, (
             data["uuid"],
-            data["hostname"],
-            request.remote_addr,
             data["mac"],
+            data["hostname"],
             now,
-            data["hardware"]
+            request.remote_addr,
+            data["hardware"],
+            data["apps"]
         ))
 
         apps = safe_json(data["apps"])
 
-        for app_data in apps:
-            name = app_data.get("name")
-            version = app_data.get("version", "N/A")
-            size = app_data.get("size", "N/A")
-            install_date = app_data.get("install_date", now.strftime("%Y-%m-%d"))
-            history_list = app_data.get("history", [])
+        for app in apps:
+            name = app.get("name")
+            version = app.get("version","N/A")
+            size = app.get("size","N/A")
+            install_date = app.get("install_date", now.strftime("%Y-%m-%d"))
+            history = app.get("history", [])
 
             cur.execute("""
-                SELECT version, history FROM apps
-                WHERE client_uuid=%s AND name=%s
+                SELECT version, history FROM apps_history
+                WHERE client_uuid=%s AND app_name=%s
             """, (data["uuid"], name))
 
-            existing = cur.fetchone()
+            row = cur.fetchone()
 
-            if existing:
-                old_version, old_history = existing
+            if row:
+                old_version, old_history = row
                 old_history_list = safe_json(old_history)
 
-                # Track version change
                 if old_version != version:
-                    change_entry = f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Version changed from {old_version} to {version}"
-                    old_history_list.append(change_entry)
+                    entry = f"{now} - Version changed {old_version} → {version}"
+                    old_history_list.append(entry)
 
                 cur.execute("""
-                    UPDATE apps
+                    UPDATE apps_history
                     SET version=%s, size=%s, install_date=%s, history=%s
-                    WHERE client_uuid=%s AND name=%s
+                    WHERE client_uuid=%s AND app_name=%s
                 """, (
-                    version,
-                    size,
-                    install_date,
-                    json.dumps(old_history_list),
-                    data["uuid"],
-                    name
+                    version, size, install_date, json.dumps(old_history_list),
+                    data["uuid"], name
                 ))
 
             else:
-                # First install
-                history_entry = f"{now.strftime('%Y-%m-%d %H:%M:%S')} - Installed version {version}"
-                history_list.append(history_entry)
+                history.append(f"{now} - Installed {version}")
 
                 cur.execute("""
-                    INSERT INTO apps
-                    (client_uuid,name,version,size,install_date,history)
+                    INSERT INTO apps_history
+                    (client_uuid,app_name,version,size,install_date,history)
                     VALUES (%s,%s,%s,%s,%s,%s)
                 """, (
-                    data["uuid"],
-                    name,
-                    version,
-                    size,
-                    install_date,
-                    json.dumps(history_list)
+                    data["uuid"], name, version, size, install_date,
+                    json.dumps(history)
                 ))
 
         con.commit()
         cur.close()
         con.close()
 
-        return jsonify({"status": "success"})
+        return jsonify({"status":"ok"})
 
     except Exception as e:
-        print("ERROR IN /api/report:", e)
-        return jsonify({"error": str(e)}), 500
+        print("ERROR /api/report:", e)
+        return jsonify({"error":str(e)}),500
 
 
-# -----------------------------
-# GET CLIENTS LIST
-# -----------------------------
+# ---------------- CLIENTS LIST ----------------
 @app.route("/api/clients")
 def get_clients():
-    search = request.args.get("search", "")
-
+    search = request.args.get("search","")
     con = get_db()
     cur = con.cursor()
 
     cur.execute("""
-        SELECT uuid, hostname, ip, mac, last_seen
+        SELECT client_uuid, hostname, client_ip, mac_address, last_seen
         FROM clients
-        WHERE hostname ILIKE %s
+        WHERE hostname ILIKE %s OR client_uuid ILIKE %s
         ORDER BY last_seen DESC
-    """, (f"%{search}%",))
+    """, (f"%{search}%", f"%{search}%"))
 
     rows = cur.fetchall()
     con.close()
 
-    result = []
     now = datetime.datetime.now()
+    result = []
 
     for r in rows:
-        last_seen = r[4]
-        status = "Online" if (now - last_seen).total_seconds() < 60 else "Offline"
-
+        status = "Online" if (now - r[4]).total_seconds() < 60 else "Offline"
         result.append({
             "uuid": r[0],
             "hostname": r[1],
             "ip": r[2],
             "mac": r[3],
+            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S"),
             "status": status
         })
 
     return jsonify(result)
 
 
-# -----------------------------
-# GET SINGLE CLIENT
-# -----------------------------
+# ---------------- SINGLE CLIENT ----------------
 @app.route("/api/client/<uuid>")
 def get_client(uuid):
     con = get_db()
     cur = con.cursor()
 
-    cur.execute("SELECT hardware FROM clients WHERE uuid=%s", (uuid,))
-    client_row = cur.fetchone()
+    cur.execute("SELECT hardware_info FROM clients WHERE client_uuid=%s", (uuid,))
+    hw_row = cur.fetchone()
 
-    cur.execute("SELECT name, version, size, install_date, history FROM apps WHERE client_uuid=%s", (uuid,))
+    cur.execute("""
+        SELECT app_name,version,size,install_date,history
+        FROM apps_history
+        WHERE client_uuid=%s
+    """, (uuid,))
     app_rows = cur.fetchall()
 
     con.close()
 
-    hardware = safe_json(client_row[0]) if client_row else {}
-
-    apps = []
-    for r in app_rows:
-        apps.append({
+    return jsonify({
+        "hardware": safe_json(hw_row[0]) if hw_row else {},
+        "apps": [{
             "name": r[0],
             "version": r[1],
             "size": r[2],
             "install_date": r[3],
             "history": safe_json(r[4])
-        })
-
-    return jsonify({
-        "hardware": hardware,
-        "apps": apps
+        } for r in app_rows]
     })
 
 
-# -----------------------------
-# DASHBOARD
-# -----------------------------
+# ---------------- DASHBOARD ----------------
 @app.route("/")
 def index():
     return render_template("dashboard.html")
 
 
-# -----------------------------
-# START SERVER (Render Fix)
-# -----------------------------
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     init_db()
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Server running on port {port}")
+    port = int(os.environ.get("PORT",10000))
+    print(f"🚀 Running on port {port}")
     app.run(host="0.0.0.0", port=port)
