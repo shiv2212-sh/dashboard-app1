@@ -1175,8 +1175,7 @@ import json, datetime, io
 
 app = Flask(__name__)
 
-DATABASE_URL = "postgresql://dashboard_db_01ci_user:fhQvDMPEzMEZJxyw7mJ3Vb951ChKBDj7@dpg-d64a6enfte5s7382kon0-a/dashboard_db_01ci"
-
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
