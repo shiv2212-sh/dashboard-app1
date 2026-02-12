@@ -1173,9 +1173,9 @@ from flask import Flask, request, jsonify, send_file
 import psycopg2, psycopg2.extras
 import json, datetime, io
 
-app = Flask(__name__)
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-DATABASE_URL = postgresql://dashboard_db_01ci_user:fhQvDMPEzMEZJxyw7mJ3Vb951ChKBDj7@dpg-d64a6enfte5s7382kon0-a/dashboard_db_01ci
+app = Flask(__name__, template_folder="templates")
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
