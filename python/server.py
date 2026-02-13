@@ -1846,11 +1846,9 @@ import psycopg2
 import psycopg2.extras
 
 from flask import Flask, request, jsonify, render_template, send_file, Response
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -1865,7 +1863,7 @@ def get_db():
 
 
 # =====================================================
-# SAFE JSON PARSER (Fix Double Encoded JSON)
+# SAFE JSON PARSER
 # =====================================================
 def parse_json_safe(value):
     if isinstance(value, str):
@@ -1879,7 +1877,7 @@ def parse_json_safe(value):
 
 
 # =====================================================
-# HOME
+# HOME ROUTE
 # =====================================================
 @app.route("/")
 def home():
@@ -1937,22 +1935,22 @@ def api_clients():
     con.close()
 
     now = datetime.datetime.utcnow()
-    results = []
+    result = []
 
     for r in rows:
         diff = (now - r["last_seen"]).total_seconds()
         status = "online" if diff < 90 else "offline"
 
-        results.append({
+        result.append({
             "uuid": r["client_uuid"],
-            "hostname": r["hostname"],
             "mac": r["mac"],
+            "hostname": r["hostname"],
             "ip": r["ip"],
             "last_seen": r["last_seen"].isoformat(),
             "status": status
         })
 
-    return jsonify(results)
+    return jsonify(result)
 
 
 # =====================================================
@@ -1968,12 +1966,12 @@ def api_client(uuid):
     con.close()
 
     if not r:
-        return jsonify({"error": "Not found"}), 404
+        return jsonify({"error": "Client not found"}), 404
 
     return jsonify({
         "uuid": r["client_uuid"],
-        "hostname": r["hostname"],
         "mac": r["mac"],
+        "hostname": r["hostname"],
         "ip": r["ip"],
         "last_seen": r["last_seen"].isoformat(),
         "hardware": parse_json_safe(r["hardware"]),
@@ -1982,7 +1980,7 @@ def api_client(uuid):
 
 
 # =====================================================
-# CSV EXPORT
+# EXPORT CSV (ALL CLIENTS)
 # =====================================================
 @app.route("/export/csv")
 def export_csv():
@@ -1996,37 +1994,15 @@ def export_csv():
     output = io.StringIO()
     writer = csv.writer(output)
 
-    writer.writerow([
-        "UUID",
-        "Hostname",
-        "MAC",
-        "IP",
-        "Last Seen",
-        "Hardware Info",
-        "Installed Apps"
-    ])
+    writer.writerow(["UUID", "Hostname", "MAC", "IP", "Last Seen"])
 
     for r in rows:
-        hardware = parse_json_safe(r["hardware"])
-        apps = parse_json_safe(r["apps"])
-
-        hardware_str = "\n".join(
-            [f"{k}: {v}" for k, v in hardware.items()]
-        )
-
-        apps_str = "\n".join(
-            [f"{app.get('name')} ({app.get('version')})"
-             for app in apps]
-        )
-
         writer.writerow([
             r["client_uuid"],
             r["hostname"],
             r["mac"],
             r["ip"],
-            r["last_seen"],
-            hardware_str,
-            apps_str
+            r["last_seen"]
         ])
 
     output.seek(0)
@@ -2034,94 +2010,62 @@ def export_csv():
     return Response(
         output,
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=Client_Report.csv"}
+        headers={"Content-Disposition": "attachment;filename=clients.csv"}
     )
 
 
 # =====================================================
-# PROFESSIONAL PDF EXPORT
+# EXPORT PDF (SINGLE CLIENT)  <-- THIS FIXES 404
 # =====================================================
-@app.route("/export/pdf")
-def export_pdf():
+@app.route("/export/pdf/<uuid>")
+def export_single_pdf(uuid):
+
     con = get_db()
     cur = con.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM clients ORDER BY last_seen DESC")
-    rows = cur.fetchall()
+    cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
     cur.close()
     con.close()
+
+    if not r:
+        return "Client not found", 404
+
+    hardware = parse_json_safe(r["hardware"])
+    apps = parse_json_safe(r["apps"])
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
     styles = getSampleStyleSheet()
 
-    elements.append(Paragraph("<b>Client Monitoring Report</b>", styles["Title"]))
+    elements.append(Paragraph("<b>Client Report</b>", styles["Title"]))
     elements.append(Spacer(1, 20))
 
-    for r in rows:
+    elements.append(Paragraph(f"Hostname: {r['hostname']}", styles["Normal"]))
+    elements.append(Paragraph(f"UUID: {r['client_uuid']}", styles["Normal"]))
+    elements.append(Paragraph(f"MAC: {r['mac']}", styles["Normal"]))
+    elements.append(Paragraph(f"IP: {r['ip']}", styles["Normal"]))
+    elements.append(Paragraph(f"Last Seen: {r['last_seen']}", styles["Normal"]))
+    elements.append(Spacer(1, 20))
 
-        hardware = parse_json_safe(r["hardware"])
-        apps = parse_json_safe(r["apps"])
+    elements.append(Paragraph("<b>Hardware Information</b>", styles["Heading2"]))
+    elements.append(Spacer(1, 10))
 
-        # Basic Info Table
-        basic_data = [
-            ["Hostname", r["hostname"]],
-            ["UUID", r["client_uuid"]],
-            ["MAC Address", r["mac"]],
-            ["IP Address", r["ip"]],
-            ["Last Seen", str(r["last_seen"])]
-        ]
+    for k, v in hardware.items():
+        elements.append(Paragraph(f"{k}: {v}", styles["Normal"]))
 
-        basic_table = Table(basic_data, colWidths=[120, 350])
-        basic_table.setStyle(TableStyle([
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-        ]))
+    elements.append(Spacer(1, 20))
 
-        elements.append(Paragraph("<b>Client Information</b>", styles["Heading2"]))
-        elements.append(Spacer(1, 8))
-        elements.append(basic_table)
-        elements.append(Spacer(1, 15))
+    elements.append(Paragraph("<b>Installed Applications</b>", styles["Heading2"]))
+    elements.append(Spacer(1, 10))
 
-        # Hardware Table
-        hardware_data = [["Component", "Details"]]
-        for k, v in hardware.items():
-            hardware_data.append([str(k), str(v)])
-
-        hardware_table = Table(hardware_data, colWidths=[150, 320])
-        hardware_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightblue),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-        ]))
-
-        elements.append(Paragraph("<b>Hardware Information</b>", styles["Heading2"]))
-        elements.append(Spacer(1, 8))
-        elements.append(hardware_table)
-        elements.append(Spacer(1, 15))
-
-        # Apps Table
-        apps_data = [["Application", "Version", "Size", "Install Date"]]
-        for app in apps:
-            apps_data.append([
-                app.get("name", "N/A"),
-                app.get("version", "N/A"),
-                app.get("size", "N/A"),
-                app.get("install_date", "N/A")
-            ])
-
-        apps_table = Table(apps_data, colWidths=[150, 80, 80, 160])
-        apps_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.lightgreen),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-        ]))
-
-        elements.append(Paragraph("<b>Installed Applications</b>", styles["Heading2"]))
-        elements.append(Spacer(1, 8))
-        elements.append(apps_table)
-        elements.append(Spacer(1, 30))
+    for app in apps:
+        elements.append(Paragraph(
+            f"{app.get('name','N/A')} - "
+            f"{app.get('version','N/A')} - "
+            f"{app.get('install_date','N/A')}",
+            styles["Normal"]
+        ))
 
     doc.build(elements)
     buffer.seek(0)
@@ -2129,13 +2073,13 @@ def export_pdf():
     return send_file(
         buffer,
         as_attachment=True,
-        download_name="Client_Report.pdf",
+        download_name=f"{uuid}_report.pdf",
         mimetype="application/pdf"
     )
 
 
 # =====================================================
-# RUN SERVER
+# RUN APP
 # =====================================================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
