@@ -1856,23 +1856,17 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 app = Flask(__name__, template_folder="templates")
 
 
-# =========================
-# DATABASE CONNECTION
-# =========================
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
-# =========================
-# HOME (LOAD DASHBOARD)
-# =========================
 @app.route("/")
 def home():
     return render_template("dashboard.html")
 
 
 # =========================
-# RECEIVE CLIENT REPORT
+# RECEIVE CLIENT DATA
 # =========================
 @app.route("/api/report", methods=["POST"])
 def api_report():
@@ -1914,8 +1908,6 @@ def api_report():
 # =========================
 @app.route("/api/clients")
 def api_clients():
-    search = request.args.get("search", "").lower()
-
     con = get_db()
     cur = con.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT * FROM clients ORDER BY last_seen DESC")
@@ -1930,9 +1922,6 @@ def api_clients():
         diff = (now - r["last_seen"]).total_seconds()
         status = "online" if diff < 90 else "offline"
 
-        if search and search not in (r["hostname"] or "").lower():
-            continue
-
         results.append({
             "uuid": r["client_uuid"],
             "mac": r["mac"],
@@ -1946,7 +1935,21 @@ def api_clients():
 
 
 # =========================
-# GET SINGLE CLIENT (FIXED JSON ISSUE)
+# SAFE JSON PARSER
+# =========================
+def parse_json_safe(value):
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+            if isinstance(value, str):
+                value = json.loads(value)
+        except:
+            return {}
+    return value
+
+
+# =========================
+# GET SINGLE CLIENT
 # =========================
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
@@ -1960,100 +1963,19 @@ def api_client(uuid):
     if not r:
         return jsonify({"error": "Not found"}), 404
 
-    # 🔥 FIX: Convert JSON string to dict if needed
-    hardware = r["hardware"]
-    apps = r["apps"]
-
-    if isinstance(hardware, str):
-        try:
-            hardware = json.loads(hardware)
-        except:
-            hardware = {}
-
-    if isinstance(apps, str):
-        try:
-            apps = json.loads(apps)
-        except:
-            apps = []
-
     return jsonify({
         "uuid": r["client_uuid"],
         "mac": r["mac"],
         "hostname": r["hostname"],
         "ip": r["ip"],
         "last_seen": r["last_seen"].isoformat(),
-        "hardware": hardware,
-        "apps": apps
+        "hardware": parse_json_safe(r["hardware"]),
+        "apps": parse_json_safe(r["apps"])
     })
 
 
 # =========================
-# EXPORT CSV
-# =========================
-@app.route("/export/csv")
-def export_csv():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT client_uuid, mac, hostname, ip, last_seen FROM clients")
-    rows = cur.fetchall()
-    cur.close()
-    con.close()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["UUID", "MAC", "Hostname", "IP", "Last Seen"])
-    writer.writerows(rows)
-
-    output.seek(0)
-
-    return send_file(
-        io.BytesIO(output.getvalue().encode()),
-        mimetype="text/csv",
-        as_attachment=True,
-        download_name="clients.csv"
-    )
-
-
-# =========================
-# EXPORT PDF
-# =========================
-@app.route("/export/pdf/<uuid>")
-def export_pdf(uuid):
-    con = get_db()
-    cur = con.cursor(cursor_factory=psycopg2.extras.DictCursor)
-    cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
-    r = cur.fetchone()
-    cur.close()
-    con.close()
-
-    if not r:
-        return "Client not found", 404
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    elements = []
-    styles = getSampleStyleSheet()
-
-    elements.append(Paragraph(f"Client: {r['hostname']}", styles["Heading1"]))
-    elements.append(Spacer(1, 12))
-    elements.append(Paragraph(f"UUID: {r['client_uuid']}", styles["Normal"]))
-    elements.append(Paragraph(f"MAC: {r['mac']}", styles["Normal"]))
-    elements.append(Paragraph(f"IP: {r['ip']}", styles["Normal"]))
-    elements.append(Paragraph(f"Last Seen: {r['last_seen']}", styles["Normal"]))
-
-    doc.build(elements)
-    buffer.seek(0)
-
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name=f"{uuid}.pdf",
-        mimetype="application/pdf"
-    )
-
-
-# =========================
-# RUN SERVER
+# RUN
 # =========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
