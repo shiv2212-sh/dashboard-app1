@@ -1377,7 +1377,268 @@
 
 
 
-from flask import Flask, request, jsonify, send_file
+# from flask import Flask, request, jsonify, send_file
+# import psycopg2, psycopg2.extras
+# import json, datetime, io, os
+
+# # ==============================
+# # DATABASE CONFIG
+# # ==============================
+
+# DATABASE_URL = os.environ.get("DATABASE_URL")
+# if not DATABASE_URL:
+#     raise ValueError("DATABASE_URL environment variable is not set!")
+
+# app = Flask(__name__, template_folder="templates")
+
+
+# def get_db():
+#     """Create new database connection."""
+#     return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+
+# def init_db():
+#     """Initialize clients table."""
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#         CREATE TABLE IF NOT EXISTS clients (
+#             client_uuid TEXT PRIMARY KEY,
+#             mac TEXT,
+#             hostname TEXT,
+#             last_seen TIMESTAMP,
+#             ip TEXT,
+#             hardware JSONB,
+#             apps JSONB
+#         )
+#     """)
+#     con.commit()
+#     cur.close()
+#     con.close()
+
+
+# # Initialize DB on startup (important for Render + Gunicorn)
+# init_db()
+
+
+# # ==============================
+# # HOME ROUTE (FIX FOR 404)
+# # ==============================
+
+# @app.route("/")
+# def home():
+#     return "Server Running Successfully"
+
+
+# # ==============================
+# # CLIENT REPORT API
+# # ==============================
+
+# @app.route("/api/report", methods=["POST"])
+# def api_report():
+#     data = request.get_json()
+#     ip = request.remote_addr
+
+#     if not data:
+#         return jsonify({"error": "No JSON received"}), 400
+
+#     required = ["uuid", "mac", "hostname", "timestamp", "hardware", "apps"]
+#     for r in required:
+#         if r not in data:
+#             return jsonify({"error": f"Missing {r}"}), 400
+
+#     # Convert timestamp safely
+#     try:
+#         timestamp = datetime.datetime.fromisoformat(data["timestamp"])
+#     except Exception:
+#         timestamp = datetime.datetime.utcnow()
+
+#     con = get_db()
+#     cur = con.cursor()
+
+#     try:
+#         cur.execute("""
+#             INSERT INTO clients (client_uuid, mac, hostname, last_seen, ip, hardware, apps)
+#             VALUES (%s,%s,%s,%s,%s,%s,%s)
+#             ON CONFLICT (client_uuid) DO UPDATE SET
+#                 mac=EXCLUDED.mac,
+#                 hostname=EXCLUDED.hostname,
+#                 last_seen=EXCLUDED.last_seen,
+#                 ip=EXCLUDED.ip,
+#                 hardware=EXCLUDED.hardware,
+#                 apps=EXCLUDED.apps
+#         """, (
+#             data["uuid"],
+#             data["mac"],
+#             data["hostname"],
+#             timestamp,
+#             ip,
+#             json.dumps(data["hardware"]),
+#             json.dumps(data["apps"])
+#         ))
+#         con.commit()
+#     finally:
+#         cur.close()
+#         con.close()
+
+#     return jsonify({"status": "ok"})
+
+
+# # ==============================
+# # GET ALL CLIENTS
+# # ==============================
+
+# @app.route("/api/clients")
+# def api_clients():
+#     search = request.args.get("search", "").lower()
+
+#     con = get_db()
+#     cur = con.cursor(cursor_factory=psycopg2.extras.DictCursor)
+#     cur.execute("SELECT * FROM clients ORDER BY last_seen DESC")
+#     rows = cur.fetchall()
+#     cur.close()
+#     con.close()
+
+#     results = []
+#     now = datetime.datetime.utcnow()
+
+#     for r in rows:
+#         last_seen = r["last_seen"]
+
+#         # Handle None safely
+#         if last_seen:
+#             diff = (now - last_seen).total_seconds()
+#             status = "online" if diff < 90 else "offline"
+#             last_seen_iso = last_seen.isoformat()
+#         else:
+#             status = "offline"
+#             last_seen_iso = None
+
+#         if search and search not in (r["hostname"] or "").lower():
+#             continue
+
+#         results.append({
+#             "uuid": r["client_uuid"],
+#             "mac": r["mac"],
+#             "hostname": r["hostname"],
+#             "last_seen": last_seen_iso,
+#             "ip": r["ip"],
+#             "status": status
+#         })
+
+#     return jsonify(results)
+
+
+# # ==============================
+# # GET SINGLE CLIENT
+# # ==============================
+
+# @app.route("/api/client/<uuid>")
+# def api_client(uuid):
+#     con = get_db()
+#     cur = con.cursor(cursor_factory=psycopg2.extras.DictCursor)
+#     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
+#     r = cur.fetchone()
+#     cur.close()
+#     con.close()
+
+#     if not r:
+#         return jsonify({"error": "Not found"}), 404
+
+#     return jsonify({
+#         "uuid": r["client_uuid"],
+#         "mac": r["mac"],
+#         "hostname": r["hostname"],
+#         "last_seen": r["last_seen"].isoformat() if r["last_seen"] else None,
+#         "ip": r["ip"],
+#         "hardware": r["hardware"],
+#         "apps": r["apps"]
+#     })
+
+
+# # ==============================
+# # EXPORT CSV
+# # ==============================
+
+# @app.route("/api/export/csv")
+# def export_csv():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT client_uuid, hostname, mac, ip, last_seen FROM clients")
+#     rows = cur.fetchall()
+#     cur.close()
+#     con.close()
+
+#     output = io.StringIO()
+#     output.write("UUID,Hostname,MAC,IP,Last Seen\n")
+
+#     for r in rows:
+#         output.write(",".join([str(x) if x else "" for x in r]) + "\n")
+
+#     mem = io.BytesIO()
+#     mem.write(output.getvalue().encode("utf-8"))
+#     mem.seek(0)
+
+#     return send_file(mem,
+#                      mimetype="text/csv",
+#                      download_name="clients.csv",
+#                      as_attachment=True)
+
+
+# # ==============================
+# # EXPORT PDF
+# # ==============================
+
+# @app.route("/api/export/pdf")
+# def export_pdf():
+#     from reportlab.lib.pagesizes import letter
+#     from reportlab.pdfgen import canvas
+
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT hostname, ip, last_seen FROM clients")
+#     rows = cur.fetchall()
+#     cur.close()
+#     con.close()
+
+#     buffer = io.BytesIO()
+#     c = canvas.Canvas(buffer, pagesize=letter)
+
+#     y = 750
+#     for r in rows:
+#         line = f"{r[0]} | {r[1]} | {r[2]}"
+#         if y < 50:
+#             c.showPage()
+#             y = 750
+#         c.drawString(40, y, line)
+#         y -= 20
+
+#     c.save()
+#     buffer.seek(0)
+
+#     return send_file(buffer,
+#                      mimetype="application/pdf",
+#                      download_name="clients.pdf",
+#                      as_attachment=True)
+
+
+# # ==============================
+# # RUN SERVER (RENDER SAFE)
+# # ==============================
+
+# if __name__ == "__main__":
+#     port = int(os.environ.get("PORT", 10000))
+#     app.run(host="0.0.0.0", port=port)
+
+
+
+
+
+
+
+
+
+from flask import Flask, request, jsonify, send_file, render_template
 import psycopg2, psycopg2.extras
 import json, datetime, io, os
 
@@ -1393,12 +1654,10 @@ app = Flask(__name__, template_folder="templates")
 
 
 def get_db():
-    """Create new database connection."""
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 
 def init_db():
-    """Initialize clients table."""
     con = get_db()
     cur = con.cursor()
     cur.execute("""
@@ -1417,17 +1676,16 @@ def init_db():
     con.close()
 
 
-# Initialize DB on startup (important for Render + Gunicorn)
+# Initialize DB on startup
 init_db()
 
-
 # ==============================
-# HOME ROUTE (FIX FOR 404)
+# DASHBOARD ROUTE
 # ==============================
 
 @app.route("/")
-def home():
-    return "Server Running Successfully"
+def dashboard():
+    return render_template("dashboard.html")
 
 
 # ==============================
@@ -1447,10 +1705,9 @@ def api_report():
         if r not in data:
             return jsonify({"error": f"Missing {r}"}), 400
 
-    # Convert timestamp safely
     try:
         timestamp = datetime.datetime.fromisoformat(data["timestamp"])
-    except Exception:
+    except:
         timestamp = datetime.datetime.utcnow()
 
     con = get_db()
@@ -1505,7 +1762,6 @@ def api_clients():
     for r in rows:
         last_seen = r["last_seen"]
 
-        # Handle None safely
         if last_seen:
             diff = (now - last_seen).total_seconds()
             status = "online" if diff < 90 else "offline"
@@ -1557,73 +1813,7 @@ def api_client(uuid):
 
 
 # ==============================
-# EXPORT CSV
-# ==============================
-
-@app.route("/api/export/csv")
-def export_csv():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT client_uuid, hostname, mac, ip, last_seen FROM clients")
-    rows = cur.fetchall()
-    cur.close()
-    con.close()
-
-    output = io.StringIO()
-    output.write("UUID,Hostname,MAC,IP,Last Seen\n")
-
-    for r in rows:
-        output.write(",".join([str(x) if x else "" for x in r]) + "\n")
-
-    mem = io.BytesIO()
-    mem.write(output.getvalue().encode("utf-8"))
-    mem.seek(0)
-
-    return send_file(mem,
-                     mimetype="text/csv",
-                     download_name="clients.csv",
-                     as_attachment=True)
-
-
-# ==============================
-# EXPORT PDF
-# ==============================
-
-@app.route("/api/export/pdf")
-def export_pdf():
-    from reportlab.lib.pagesizes import letter
-    from reportlab.pdfgen import canvas
-
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT hostname, ip, last_seen FROM clients")
-    rows = cur.fetchall()
-    cur.close()
-    con.close()
-
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-
-    y = 750
-    for r in rows:
-        line = f"{r[0]} | {r[1]} | {r[2]}"
-        if y < 50:
-            c.showPage()
-            y = 750
-        c.drawString(40, y, line)
-        y -= 20
-
-    c.save()
-    buffer.seek(0)
-
-    return send_file(buffer,
-                     mimetype="application/pdf",
-                     download_name="clients.pdf",
-                     as_attachment=True)
-
-
-# ==============================
-# RUN SERVER (RENDER SAFE)
+# RUN SERVER (Render Safe)
 # ==============================
 
 if __name__ == "__main__":
