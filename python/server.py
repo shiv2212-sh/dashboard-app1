@@ -2104,6 +2104,8 @@ app = Flask(__name__, template_folder="templates")
 
 # ---------------- DATABASE ----------------
 def get_db():
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL not set")
     return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
 
 def init_db():
@@ -2122,6 +2124,15 @@ def init_db():
     """)
     con.commit()
     con.close()
+
+# ---------------- SAFE DB INIT (Production Safe) ----------------
+try:
+    if DATABASE_URL:
+        init_db()
+    else:
+        print("WARNING: DATABASE_URL not set")
+except Exception as e:
+    print("Database init failed:", e)
 
 # ---------------- HELPERS ----------------
 def safe_json(v):
@@ -2146,10 +2157,9 @@ def dashboard():
 def api_report():
     data = request.json
     try:
-        # Convert hardware and apps JSON strings back to Python objects
         hardware = json.loads(data["hardware"]) if isinstance(data.get("hardware"), str) else data.get("hardware", {})
         apps = json.loads(data["apps"]) if isinstance(data.get("apps"), str) else data.get("apps", [])
-        
+
         client_ip = hardware.get("IP Address", "Unknown")
 
         con = get_db()
@@ -2170,6 +2180,7 @@ def api_report():
         ))
         con.commit()
         con.close()
+
         return jsonify({"status": "ok"})
 
     except Exception as e:
@@ -2181,6 +2192,7 @@ def api_clients():
     search = request.args.get("search")
     con = get_db()
     cur = con.cursor()
+
     if search:
         cur.execute("""
         SELECT * FROM clients
@@ -2188,8 +2200,10 @@ def api_clients():
         """, (f"%{search}%", f"%{search}%", f"%{search}%"))
     else:
         cur.execute("SELECT * FROM clients")
+
     rows = cur.fetchall()
     con.close()
+
     return jsonify([{
         "uuid": r[0],
         "mac": r[1],
@@ -2206,6 +2220,7 @@ def api_client(uuid):
     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
     r = cur.fetchone()
     con.close()
+
     if not r:
         return jsonify({"error": "Client not found"}), 404
 
@@ -2226,6 +2241,7 @@ def export_pdf(uuid):
     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
     r = cur.fetchone()
     con.close()
+
     if not r:
         return "Client not found", 404
 
@@ -2243,23 +2259,35 @@ def export_pdf(uuid):
     hw = safe_json(r[5])
     hw_data = [["Field", "Value"]] + [[k, str(v)] for k, v in hw.items()]
     hw_table = Table(hw_data, colWidths=[120, 350])
-    hw_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black),
-                                  ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)]))
+    hw_table.setStyle(TableStyle([
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
+    ]))
+
     elements.append(Paragraph("Hardware Info", styles["Heading2"]))
     elements.append(hw_table)
     elements.append(Spacer(1,12))
 
     # Installed Apps Table
     apps = safe_json(r[6])
-    apps_data = [["Installed Apps"]] + [[a] for a in apps]
+    apps_data = [["Installed Apps"]] + [[json.dumps(a)] for a in apps]
     apps_table = Table(apps_data, colWidths=[470])
-    apps_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.black),
-                                    ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)]))
+    apps_table.setStyle(TableStyle([
+        ('GRID',(0,0),(-1,-1),0.5,colors.black),
+        ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
+    ]))
+
     elements.append(Paragraph("Installed Apps", styles["Heading2"]))
     elements.append(apps_table)
 
     doc.build(elements)
-    return send_file(path, as_attachment=True, mimetype="application/pdf", download_name=f"{uuid}.pdf")
+
+    return send_file(
+        path,
+        as_attachment=True,
+        mimetype="application/pdf",
+        download_name=f"{uuid}.pdf"
+    )
 
 @app.route("/export/csv")
 def export_csv():
@@ -2274,10 +2302,8 @@ def export_csv():
         for r in rows:
             yield f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]}\n"
 
-    return Response(generate(), mimetype="text/csv",
-                    headers={"Content-Disposition": "attachment;filename=clients.csv"})
-
-# ---------------- RUN ----------------
-if __name__ == "__main__":
-    init_db()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    return Response(
+        generate(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=clients.csv"}
+    )
