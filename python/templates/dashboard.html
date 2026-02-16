@@ -610,206 +610,164 @@
 
 
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Client Dashboard</title>
+    <title>Client Dashboard</title>
+    <meta charset="utf-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+        }
 
-<style>
-body.dark { background:#121212; color:#e0e0e0; font-family:Arial; }
-body.light { background:#f5f5f5; color:#121212; font-family:Arial; }
+        h1 {
+            text-align: center;
+        }
 
-.container { width:90%; margin:20px auto; }
+        .search-box {
+            text-align: center;
+            margin-bottom: 20px;
+        }
 
-h1 { text-align:center; }
+        input {
+            padding: 8px;
+            width: 250px;
+        }
 
-.toolbar {
-    margin-bottom:15px;
-    display:flex;
-    justify-content:space-between;
-    flex-wrap:wrap;
-    gap:10px;
-}
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
 
-.toolbar input {
-    padding:6px;
-    border-radius:4px;
-    border:1px solid #555;
-}
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+        }
 
-.toolbar button {
-    padding:6px 12px;
-    border:none;
-    border-radius:4px;
-    cursor:pointer;
-}
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: center;
+        }
 
-table {
-    width:100%;
-    border-collapse:collapse;
-}
+        th {
+            background-color: #007bff;
+            color: white;
+        }
 
-th, td {
-    padding:8px;
-    border:1px solid #444;
-}
+        .online {
+            color: green;
+            font-weight: bold;
+        }
 
-th { background:#222; }
+        .offline {
+            color: red;
+            font-weight: bold;
+        }
 
-.view-btn {
-    background:#007bff;
-    color:white;
-}
+        .message {
+            text-align: center;
+            margin-top: 20px;
+            font-weight: bold;
+        }
 
-.view-btn:hover {
-    background:#0056b3;
-}
-
-.pdf-link {
-    color:#ff9800;
-    text-decoration:none;
-}
-</style>
+        .error {
+            color: red;
+        }
+    </style>
 </head>
-
-<body class="dark">
-
-<div class="container">
-
-<div id="main-dashboard">
+<body>
 
 <h1>Client Monitoring Dashboard</h1>
 
-<div class="toolbar">
-<input type="text" id="search" placeholder="Search clients...">
-<div>
-<button onclick="exportCSV()">Export CSV</button>
-<button onclick="toggleTheme()">Toggle Theme</button>
-</div>
+<div class="search-box">
+    <input type="text" id="search" placeholder="Search UUID, Hostname, MAC">
+    <button onclick="loadClients()">Search</button>
 </div>
 
-<table>
-<thead>
-<tr>
-<th>UUID</th>
-<th>MAC</th>
-<th>Hostname</th>
-<th>IP</th>
-<th>Last Seen</th>
-<th>Status</th>
-<th>Actions</th>
-</tr>
-</thead>
-<tbody id="clients-body"></tbody>
+<table id="clientsTable">
+    <thead>
+        <tr>
+            <th>UUID</th>
+            <th>Hostname</th>
+            <th>MAC</th>
+            <th>IP</th>
+            <th>Last Seen</th>
+            <th>Status</th>
+            <th>Details</th>
+        </tr>
+    </thead>
+    <tbody>
+    </tbody>
 </table>
 
-</div>
-
-
-<div id="detail-view" style="display:none">
-
-<h2>Client Details</h2>
-
-<div class="toolbar">
-<button onclick="backToDashboard()">Back</button>
-<a id="pdf-link" target="_blank">Export PDF</a>
-<button onclick="toggleTheme()">Toggle Theme</button>
-</div>
-
-<h3>Hardware Info</h3>
-<table>
-<tbody id="hardware-body"></tbody>
-</table>
-
-<h3>Installed Applications</h3>
-<table>
-<thead>
-<tr>
-<th>Name</th>
-<th>Version</th>
-<th>Size</th>
-<th>Install Date</th>
-</tr>
-</thead>
-<tbody id="apps-body"></tbody>
-</table>
-
-</div>
-
-</div>
+<div class="message" id="message"></div>
 
 <script>
-
 async function loadClients() {
-    const res = await fetch("/api/clients");
-    const data = await res.json();
-    const tbody = document.getElementById("clients-body");
-    tbody.innerHTML = "";
+    const search = document.getElementById("search").value;
+    const messageDiv = document.getElementById("message");
+    const tableBody = document.querySelector("#clientsTable tbody");
 
-    data.forEach(c => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-        <td>${c.uuid}</td>
-        <td>${c.mac}</td>
-        <td>${c.hostname}</td>
-        <td>${c.ip}</td>
-        <td>${c.last_seen}</td>
-        <td>${c.status}</td>
-        <td>
-            <button class="view-btn" onclick="viewClient('${c.uuid}')">View</button>
-            <a class="pdf-link" href="/export/pdf/${c.uuid}" target="_blank">PDF</a>
-        </td>
-        `;
-        tbody.appendChild(tr);
-    });
+    tableBody.innerHTML = "";
+    messageDiv.innerHTML = "Loading...";
+
+    try {
+        const response = await fetch("/api/clients?search=" + encodeURIComponent(search));
+        
+        if (!response.ok) {
+            throw new Error("Server error");
+        }
+
+        const data = await response.json();
+
+        tableBody.innerHTML = "";
+        messageDiv.innerHTML = "";
+
+        if (data.length === 0) {
+            messageDiv.innerHTML = "No clients found.";
+            return;
+        }
+
+        data.forEach(client => {
+            const row = document.createElement("tr");
+
+            row.innerHTML = `
+                <td>${client.uuid}</td>
+                <td>${client.hostname}</td>
+                <td>${client.mac}</td>
+                <td>${client.ip}</td>
+                <td>${client.last_seen}</td>
+                <td class="${client.status === 'Online' ? 'online' : 'offline'}">
+                    ${client.status}
+                </td>
+                <td>
+                    <a href="/api/client/${client.uuid}" target="_blank">View</a>
+                </td>
+            `;
+
+            tableBody.appendChild(row);
+        });
+
+    } catch (error) {
+        messageDiv.innerHTML = "Error loading clients. Check server or database.";
+        messageDiv.classList.add("error");
+        console.error(error);
+    }
 }
 
-function exportCSV(){
-    window.location.href="/export/csv";
-}
+// Auto refresh every 30 seconds
+setInterval(loadClients, 30000);
 
-async function viewClient(uuid){
-    const res = await fetch(`/api/client/${uuid}`);
-    const data = await res.json();
+// Initial load
+loadClients();
+</script>
 
-    document.getElementById("main-dashboard").style.display="none";
-    document.getElementById("detail-view").style.display="block";
-
-    const hardwareBody = document.getElementById("hardware-body");
-    hardwareBody.innerHTML="";
-
-    Object.entries(data.hardware).forEach(([k,v])=>{
-        hardwareBody.innerHTML += `<tr><th>${k}</th><td>${v}</td></tr>`;
-    });
-
-    const appsBody = document.getElementById("apps-body");
-    appsBody.innerHTML="";
-
-    data.apps.forEach(app=>{
-        appsBody.innerHTML += `
-        <tr>
-        <td>${app.name || "N/A"}</td>
-        <td>${app.version || "N/A"}</td>
-        <td>${app.size || "N/A"}</td>
-        <td>${app.install_date || "N/A"}</td>
-        </tr>
-        `;
-    });
-
-    document.getElementById("pdf-link").href=`/export/pdf/${uuid}`;
-}
-
-function backToDashboard(){
-    document.getElementById("detail-view").style.display="none";
-    document.getElementById("main-dashboard").style.display="block";
-}
-
-function toggleTheme(){
-    document.body.classList.toggle("dark");
-    document.body.classList.toggle("light");
-}
-
-document.addEventListener("DOMContentLoaded", loadClients);
+</body>
+</html>
 
 </script>
 
