@@ -1301,9 +1301,15 @@ import os
 import json
 import datetime
 import psycopg2
-from flask import Flask, jsonify, render_template, request, Response
+from flask import Flask, jsonify, render_template, request, Response, send_file
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+import tempfile
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
 app = Flask(__name__, template_folder="templates")
 
 
@@ -1324,8 +1330,8 @@ def init_db():
         hostname TEXT,
         last_seen TEXT,
         ip TEXT,
-        hardware TEXT,
-        apps TEXT
+        hardware JSON,
+        apps JSON
     )
     """)
     con.commit()
@@ -1352,7 +1358,8 @@ def safe_json(v):
 def status_from_last_seen(ts):
     try:
         t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-        return "Online" if (datetime.datetime.now() - t).total_seconds() <= 60 else "Offline"
+        delta = datetime.datetime.now() - t
+        return "Online" if delta.total_seconds() <= 120 else "Offline"
     except:
         return "Offline"
 
@@ -1363,7 +1370,6 @@ def dashboard():
     return render_template("dashboard.html")
 
 
-# ---------------- API ----------------
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
@@ -1376,7 +1382,7 @@ def api_report():
         con = get_db()
         cur = con.cursor()
 
-        # Update existing client
+        # UPDATE if exists
         cur.execute("""
             UPDATE clients SET
                 mac_address=%s,
@@ -1396,12 +1402,11 @@ def api_report():
             data["uuid"]
         ))
 
-        # Insert new if not exists
+        # INSERT if new
         if cur.rowcount == 0:
             cur.execute("""
                 INSERT INTO clients (
-                    client_uuid, mac_address, hostname,
-                    last_seen, ip, hardware, apps
+                    client_uuid, mac_address, hostname, last_seen, ip, hardware, apps
                 ) VALUES (%s,%s,%s,%s,%s,%s,%s)
             """, (
                 data["uuid"], data["mac"], data["hostname"],
@@ -1412,7 +1417,6 @@ def api_report():
         con.commit()
         con.close()
         return jsonify({"status": "ok"})
-
     except Exception as e:
         print("Error in api_report:", e)
         return jsonify({"error": str(e)}), 500
@@ -1426,8 +1430,8 @@ def api_clients():
 
     if search:
         cur.execute("""
-        SELECT * FROM clients
-        WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s OR ip ILIKE %s
+            SELECT * FROM clients
+            WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s OR ip ILIKE %s
         """, (f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"))
     else:
         cur.execute("SELECT * FROM clients")
@@ -1466,8 +1470,58 @@ def client_page(uuid):
         "apps": safe_json(r[6])
     }
 
-    return render_template("client_detail.html", client=client_data)
+    # Render HTML for the client detail page
+    html = f"""
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Client {client_data['hostname']}</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+        <script>
+        function showHistory(history) {{
+            alert(JSON.stringify(history, null, 2));
+        }}
+        </script>
+    </head>
+    <body class="p-4">
+        <a href='/' class='btn btn-secondary mb-3'>Back</a>
+        <h3>Client Details: {client_data['hostname']}</h3>
+        <table class="table table-bordered">
+            <tr><th>UUID</th><td>{client_data['uuid']}</td></tr>
+            <tr><th>Hostname</th><td>{client_data['hostname']}</td></tr>
+            <tr><th>MAC</th><td>{client_data['mac']}</td></tr>
+            <tr><th>IP</th><td>{client_data['ip']}</td></tr>
+            <tr><th>Last Seen</th><td>{client_data['last_seen']}</td></tr>
+        </table>
+        <h4>Hardware Info</h4>
+        <table class="table table-bordered">
+            {"".join(f"<tr><th>{k}</th><td>{v}</td></tr>" for k,v in client_data['hardware'].items())}
+        </table>
+        <h4>Installed Apps</h4>
+        <table class="table table-bordered">
+            <thead><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th><th>History</th></tr></thead>
+            <tbody>
+                {"".join(f"<tr><td>{a.get('name')}</td><td>{a.get('version')}</td><td>{a.get('install_date')}</td><td>{a.get('size_bytes')}</td><td><button class='btn btn-sm btn-info' onclick='showHistory({json.dumps(a.get('history',[]))})'>View</button></td></tr>" for a in client_data['apps'])}
+            </tbody>
+        </table>
+    </body>
+    </html>
+    """
+    return html
+
+
+@app.route("/delete-client/<uuid>", methods=["DELETE"])
+def delete_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+    con.commit()
+    con.close()
+    return jsonify({"status":"deleted"})
 
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host="0.0.0.0", port=port)
