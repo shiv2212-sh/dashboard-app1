@@ -2087,332 +2087,467 @@
 
 
 
-import os
-import json
-import datetime
-import psycopg2
-from flask import Flask, jsonify, render_template, send_file, request, Response
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-import tempfile
-
-DATABASE_URL = os.environ.get("DATABASE_URL")
-
-app = Flask(__name__, template_folder="templates")
-
-# ---------------- DATABASE ----------------
-def get_db():
-    if not DATABASE_URL:
-        raise Exception("DATABASE_URL not set")
-    return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
-
-def init_db():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS clients (
-        client_uuid TEXT PRIMARY KEY,
-        mac_address TEXT,
-        hostname TEXT,
-        last_seen TEXT,
-        client_ip TEXT,
-        hardware_info TEXT,
-        installed_apps TEXT
-    )
-    """)
-    con.commit()
-    con.close()
-
-# ---------------- SAFE DB INIT (Production Safe) ----------------
-try:
-    if DATABASE_URL:
-        init_db()
-    else:
-        print("WARNING: DATABASE_URL not set")
-except Exception as e:
-    print("Database init failed:", e)
-
-# ---------------- HELPERS ----------------
-def safe_json(v):
-    try:
-        return json.loads(v)
-    except:
-        return v
-
-def status_from_last_seen(ts):
-    try:
-        t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-        return "Online" if (datetime.datetime.now() - t).seconds <= 60 else "Offline"
-    except:
-        return "Offline"
-
-# ---------------- ROUTES ----------------
-@app.route("/")
-def dashboard():
-    return render_template("dashboard.html")
-
-@app.route("/api/report", methods=["POST"])
-def api_report():
-    data = request.json
-    try:
-        hardware = json.loads(data["hardware"]) if isinstance(data.get("hardware"), str) else data.get("hardware", {})
-        apps = json.loads(data["apps"]) if isinstance(data.get("apps"), str) else data.get("apps", [])
-
-        client_ip = hardware.get("IP Address", "Unknown")
-
-        con = get_db()
-        cur = con.cursor()
-        cur.execute("""
-        INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT(client_uuid) DO UPDATE SET
-            mac_address=EXCLUDED.mac_address,
-            hostname=EXCLUDED.hostname,
-            last_seen=EXCLUDED.last_seen,
-            client_ip=EXCLUDED.client_ip,
-            hardware_info=EXCLUDED.hardware_info,
-            installed_apps=EXCLUDED.installed_apps
-        """, (
-            data["uuid"], data["mac"], data["hostname"],
-            data["timestamp"], client_ip,
-            data["hardware"], data["apps"]
-        ))
-        con.commit()
-        con.close()
-
-        return jsonify({"status": "ok"})
-
-    except Exception as e:
-        print("Error in api_report:", e)
-        return jsonify({"error": str(e)}), 500
-
-@app.route("/api/clients")
-def api_clients():
-    search = request.args.get("search")
-    con = get_db()
-    cur = con.cursor()
-
-    if search:
-        cur.execute("""
-        SELECT * FROM clients
-        WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s
-        """, (f"%{search}%", f"%{search}%", f"%{search}%"))
-    else:
-        cur.execute("SELECT * FROM clients")
-
-    rows = cur.fetchall()
-    con.close()
-
-    return jsonify([{
-        "uuid": r[0],
-        "mac": r[1],
-        "hostname": r[2],
-        "last_seen": r[3],
-        "ip": r[4],
-        "status": status_from_last_seen(r[3])
-    } for r in rows])
-
-@app.route("/api/client/<uuid>")
-def api_client(uuid):
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
-    r = cur.fetchone()
-    con.close()
-
-    if not r:
-        return jsonify({"error": "Client not found"}), 404
-
-    return jsonify({
-        "uuid": r[0],
-        "mac": r[1],
-        "hostname": r[2],
-        "last_seen": r[3],
-        "ip": r[4],
-        "hardware": safe_json(r[5]),
-        "apps": safe_json(r[6])
-    })
-
-@app.route("/export/pdf/<uuid>")
-def export_pdf(uuid):
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
-    r = cur.fetchone()
-    con.close()
-
-    if not r:
-        return "Client not found", 404
-
-    fd, path = tempfile.mkstemp(suffix=".pdf")
-    os.close(fd)
-
-    doc = SimpleDocTemplate(path, pagesize=A4)
-    styles = getSampleStyleSheet()
-    elements = []
-
-    elements.append(Paragraph("Client Report", styles["Title"]))
-    elements.append(Spacer(1, 12))
-
-    # Hardware Table
-    hw = safe_json(r[5])
-    hw_data = [["Field", "Value"]] + [[k, str(v)] for k, v in hw.items()]
-    hw_table = Table(hw_data, colWidths=[120, 350])
-    hw_table.setStyle(TableStyle([
-        ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
-    ]))
-
-    elements.append(Paragraph("Hardware Info", styles["Heading2"]))
-    elements.append(hw_table)
-    elements.append(Spacer(1,12))
-
-    # Installed Apps Table
-    apps = safe_json(r[6])
-    apps_data = [["Installed Apps"]] + [[json.dumps(a)] for a in apps]
-    apps_table = Table(apps_data, colWidths=[470])
-    apps_table.setStyle(TableStyle([
-        ('GRID',(0,0),(-1,-1),0.5,colors.black),
-        ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
-    ]))
-
-    elements.append(Paragraph("Installed Apps", styles["Heading2"]))
-    elements.append(apps_table)
-
-    doc.build(elements)
-
-    return send_file(
-        path,
-        as_attachment=True,
-        mimetype="application/pdf",
-        download_name=f"{uuid}.pdf"
-    )
-
-@app.route("/export/csv")
-def export_csv():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT client_uuid, mac_address, hostname, last_seen, client_ip FROM clients")
-    rows = cur.fetchall()
-    con.close()
-
-    def generate():
-        yield "UUID,MAC,Hostname,Last Seen,IP\n"
-        for r in rows:
-            yield f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]}\n"
-
-    return Response(
-        generate(),
-        mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=clients.csv"}
-    )
-
-
-
-
-
-
-
-
-
-
-# from flask import Flask, request, jsonify, render_template
-# import psycopg2
 # import os
 # import json
-# from datetime import datetime
-
-# app = Flask(__name__)
+# import datetime
+# import psycopg2
+# from flask import Flask, jsonify, render_template, send_file, request, Response
+# from reportlab.lib.pagesizes import A4
+# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+# from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.lib import colors
+# import tempfile
 
 # DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# if not DATABASE_URL:
-#     print("WARNING: DATABASE_URL not set")
+# app = Flask(__name__, template_folder="templates")
 
-# def get_connection():
-#     return psycopg2.connect(DATABASE_URL)
+# # ---------------- DATABASE ----------------
+# def get_db():
+#     if not DATABASE_URL:
+#         raise Exception("DATABASE_URL not set")
+#     return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
 
+# def init_db():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#     CREATE TABLE IF NOT EXISTS clients (
+#         client_uuid TEXT PRIMARY KEY,
+#         mac_address TEXT,
+#         hostname TEXT,
+#         last_seen TEXT,
+#         client_ip TEXT,
+#         hardware_info TEXT,
+#         installed_apps TEXT
+#     )
+#     """)
+#     con.commit()
+#     con.close()
 
-# # ===============================
-# # RECEIVE CLIENT DATA
-# # ===============================
-# @app.route("/api/client", methods=["POST"])
-# def receive_client():
+# # ---------------- SAFE DB INIT (Production Safe) ----------------
+# try:
+#     if DATABASE_URL:
+#         init_db()
+#     else:
+#         print("WARNING: DATABASE_URL not set")
+# except Exception as e:
+#     print("Database init failed:", e)
+
+# # ---------------- HELPERS ----------------
+# def safe_json(v):
 #     try:
-#         data = request.json
+#         return json.loads(v)
+#     except:
+#         return v
 
-#         client_uuid = data["client_uuid"]
-#         mac_address = data["mac_address"]
-#         hostname = data["hostname"]
-#         ip = data["ip"]
-#         client_ip = request.remote_addr
+# def status_from_last_seen(ts):
+#     try:
+#         t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
+#         return "Online" if (datetime.datetime.now() - t).seconds <= 60 else "Offline"
+#     except:
+#         return "Offline"
 
-#         hardware = json.dumps(data["hardware"])
-#         apps = json.dumps(data["apps"])
-
-#         conn = get_connection()
-#         cur = conn.cursor()
-
-#         cur.execute("""
-#             INSERT INTO clients
-#             (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps, client_ip)
-#             VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-#             ON CONFLICT (client_uuid)
-#             DO UPDATE SET
-#                 mac_address = EXCLUDED.mac_address,
-#                 hostname = EXCLUDED.hostname,
-#                 last_seen = EXCLUDED.last_seen,
-#                 ip = EXCLUDED.ip,
-#                 hardware = EXCLUDED.hardware,
-#                 apps = EXCLUDED.apps,
-#                 client_ip = EXCLUDED.client_ip;
-#         """, (
-#             client_uuid,
-#             mac_address,
-#             hostname,
-#             datetime.utcnow(),
-#             ip,
-#             hardware,
-#             apps,
-#             client_ip
-#         ))
-
-#         conn.commit()
-#         cur.close()
-#         conn.close()
-
-#         return jsonify({"status": "success"})
-
-#     except Exception as e:
-#         return jsonify({"error": str(e)}), 500
-
-
-# # ===============================
-# # DASHBOARD PAGE
-# # ===============================
+# # ---------------- ROUTES ----------------
 # @app.route("/")
 # def dashboard():
+#     return render_template("dashboard.html")
+
+# @app.route("/api/report", methods=["POST"])
+# def api_report():
+#     data = request.json
 #     try:
-#         conn = get_connection()
-#         cur = conn.cursor()
+#         hardware = json.loads(data["hardware"]) if isinstance(data.get("hardware"), str) else data.get("hardware", {})
+#         apps = json.loads(data["apps"]) if isinstance(data.get("apps"), str) else data.get("apps", [])
 
-#         cur.execute("SELECT * FROM clients ORDER BY last_seen DESC;")
-#         rows = cur.fetchall()
+#         client_ip = hardware.get("IP Address", "Unknown")
 
-#         cur.close()
-#         conn.close()
+#         con = get_db()
+#         cur = con.cursor()
+#         cur.execute("""
+#         INSERT INTO clients VALUES (%s,%s,%s,%s,%s,%s,%s)
+#         ON CONFLICT(client_uuid) DO UPDATE SET
+#             mac_address=EXCLUDED.mac_address,
+#             hostname=EXCLUDED.hostname,
+#             last_seen=EXCLUDED.last_seen,
+#             client_ip=EXCLUDED.client_ip,
+#             hardware_info=EXCLUDED.hardware_info,
+#             installed_apps=EXCLUDED.installed_apps
+#         """, (
+#             data["uuid"], data["mac"], data["hostname"],
+#             data["timestamp"], client_ip,
+#             data["hardware"], data["apps"]
+#         ))
+#         con.commit()
+#         con.close()
 
-#         return render_template("dashboard.html", clients=rows)
+#         return jsonify({"status": "ok"})
 
 #     except Exception as e:
-#         return f"Database Error: {str(e)}"
+#         print("Error in api_report:", e)
+#         return jsonify({"error": str(e)}), 500
+
+# @app.route("/api/clients")
+# def api_clients():
+#     search = request.args.get("search")
+#     con = get_db()
+#     cur = con.cursor()
+
+#     if search:
+#         cur.execute("""
+#         SELECT * FROM clients
+#         WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s
+#         """, (f"%{search}%", f"%{search}%", f"%{search}%"))
+#     else:
+#         cur.execute("SELECT * FROM clients")
+
+#     rows = cur.fetchall()
+#     con.close()
+
+#     return jsonify([{
+#         "uuid": r[0],
+#         "mac": r[1],
+#         "hostname": r[2],
+#         "last_seen": r[3],
+#         "ip": r[4],
+#         "status": status_from_last_seen(r[3])
+#     } for r in rows])
+
+# @app.route("/api/client/<uuid>")
+# def api_client(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
+#     r = cur.fetchone()
+#     con.close()
+
+#     if not r:
+#         return jsonify({"error": "Client not found"}), 404
+
+#     return jsonify({
+#         "uuid": r[0],
+#         "mac": r[1],
+#         "hostname": r[2],
+#         "last_seen": r[3],
+#         "ip": r[4],
+#         "hardware": safe_json(r[5]),
+#         "apps": safe_json(r[6])
+#     })
+
+# @app.route("/export/pdf/<uuid>")
+# def export_pdf(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT * FROM clients WHERE client_uuid=%s", (uuid,))
+#     r = cur.fetchone()
+#     con.close()
+
+#     if not r:
+#         return "Client not found", 404
+
+#     fd, path = tempfile.mkstemp(suffix=".pdf")
+#     os.close(fd)
+
+#     doc = SimpleDocTemplate(path, pagesize=A4)
+#     styles = getSampleStyleSheet()
+#     elements = []
+
+#     elements.append(Paragraph("Client Report", styles["Title"]))
+#     elements.append(Spacer(1, 12))
+
+#     # Hardware Table
+#     hw = safe_json(r[5])
+#     hw_data = [["Field", "Value"]] + [[k, str(v)] for k, v in hw.items()]
+#     hw_table = Table(hw_data, colWidths=[120, 350])
+#     hw_table.setStyle(TableStyle([
+#         ('GRID',(0,0),(-1,-1),0.5,colors.black),
+#         ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
+#     ]))
+
+#     elements.append(Paragraph("Hardware Info", styles["Heading2"]))
+#     elements.append(hw_table)
+#     elements.append(Spacer(1,12))
+
+#     # Installed Apps Table
+#     apps = safe_json(r[6])
+#     apps_data = [["Installed Apps"]] + [[json.dumps(a)] for a in apps]
+#     apps_table = Table(apps_data, colWidths=[470])
+#     apps_table.setStyle(TableStyle([
+#         ('GRID',(0,0),(-1,-1),0.5,colors.black),
+#         ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
+#     ]))
+
+#     elements.append(Paragraph("Installed Apps", styles["Heading2"]))
+#     elements.append(apps_table)
+
+#     doc.build(elements)
+
+#     return send_file(
+#         path,
+#         as_attachment=True,
+#         mimetype="application/pdf",
+#         download_name=f"{uuid}.pdf"
+#     )
+
+# @app.route("/export/csv")
+# def export_csv():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT client_uuid, mac_address, hostname, last_seen, client_ip FROM clients")
+#     rows = cur.fetchall()
+#     con.close()
+
+#     def generate():
+#         yield "UUID,MAC,Hostname,Last Seen,IP\n"
+#         for r in rows:
+#             yield f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]}\n"
+
+#     return Response(
+#         generate(),
+#         mimetype="text/csv",
+#         headers={"Content-Disposition": "attachment;filename=clients.csv"}
+#     )
 
 
-# # ===============================
-# # RUN SERVER (LOCAL + CLOUD)
-# # ===============================
-# if __name__ == "__main__":
-#     port = int(os.environ.get("PORT", 5000))
-#     app.run(host="0.0.0.0", port=port)
 
+
+
+
+
+
+
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enterprise Client Monitoring</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<style>
+:root {
+    --light-bg: #f4f6f9;
+    --light-card: #ffffff;
+    --light-text: #1f2937;
+
+    --dark-bg: #0f172a;
+    --dark-card: #1e293b;
+    --dark-text: #f1f5f9;
+
+    --primary: #3b82f6;
+    --success: #22c55e;
+    --danger: #ef4444;
+}
+
+body.light-mode { background: var(--light-bg); color: var(--light-text); }
+body.dark-mode { background: var(--dark-bg); color: var(--dark-text); }
+
+.card { border-radius: 14px; border: none; }
+body.light-mode .card { background: var(--light-card); }
+body.dark-mode .card { background: var(--dark-card); }
+
+.stat-card { padding: 20px; text-align:center; font-weight:600; }
+.stat-number { font-size:28px; }
+.status-online { color: var(--success); font-weight:bold; }
+.status-offline { color: var(--danger); font-weight:bold; }
+
+.navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
+.toggle-btn { cursor:pointer; }
+</style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<div class="navbar-custom">
+    <h4>Enterprise Client Monitoring</h4>
+    <div>
+        <button class="btn btn-outline-secondary me-2" onclick="toggleMode()">🌙 Toggle</button>
+        <button class="btn btn-primary" onclick="loadClients()">Refresh</button>
+    </div>
+</div>
+
+<div class="container mt-4">
+
+    <!-- STATS -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card stat-card shadow-sm">Total Clients<div class="stat-number" id="totalCount">0</div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stat-card shadow-sm">Online<div class="stat-number text-success" id="onlineCount">0</div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card stat-card shadow-sm">Offline<div class="stat-number text-danger" id="offlineCount">0</div></div>
+        </div>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="card p-4 mb-4 shadow-sm">
+        <div class="row">
+            <div class="col-md-10">
+                <input type="text" id="searchInput" class="form-control"
+                       placeholder="Search by hostname, UUID, MAC, IP..." onkeyup="loadClients()">
+            </div>
+            <div class="col-md-2">
+                <button class="btn btn-primary w-100" onclick="loadClients()">Search</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CLIENTS TABLE -->
+    <div class="card p-4 shadow-sm">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-secondary">
+                    <tr>
+                        <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th width="220">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="clientsTableBody">
+                    <tr><td colspan="7" class="text-center">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+
+<!-- CLIENT DETAILS MODAL -->
+<div class="modal fade" id="clientModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Client Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="clientDetails">
+                Loading...
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+// THEME TOGGLE
+function toggleMode() {
+    const body = document.body;
+    if (body.classList.contains("dark-mode")) {
+        body.classList.replace("dark-mode","light-mode");
+        localStorage.setItem("theme","light");
+    } else {
+        body.classList.replace("light-mode","dark-mode");
+        localStorage.setItem("theme","dark");
+    }
+}
+(function(){ const saved=localStorage.getItem("theme")||"dark"; document.body.classList.add(saved+"-mode"); })();
+
+// DELETE CLIENT
+async function deleteClient(uuid){
+    if(!confirm("Are you sure you want to delete this client?")) return;
+    await fetch("/delete-client/"+uuid,{method:"DELETE"});
+    loadClients();
+}
+
+// VIEW CLIENT MODAL
+async function viewClient(uuid){
+    const modalEl = document.getElementById("clientModal");
+    const modal = new bootstrap.Modal(modalEl);
+    const detailsDiv = document.getElementById("clientDetails");
+
+    detailsDiv.innerHTML = "Loading...";
+    modal.show();
+
+    try{
+        const resp = await fetch("/api/client/"+uuid);
+        const data = await resp.json();
+
+        if(data.error){
+            detailsDiv.innerHTML="Client not found.";
+            return;
+        }
+
+        let hwHTML="<h6>Hardware Information</h6><ul>";
+        for(let k in data.hardware){
+            hwHTML+=`<li><strong>${k}:</strong> ${data.hardware[k]}</li>`;
+        }
+        hwHTML+="</ul>";
+
+        let appsHTML="<h6>Installed Applications</h6><ul>";
+        data.apps.forEach(app=>{
+            if(typeof app==="object"){
+                appsHTML+=`<li>${app.name || JSON.stringify(app)}</li>`;
+            } else appsHTML+=`<li>${app}</li>`;
+        });
+        appsHTML+="</ul>";
+
+        detailsDiv.innerHTML=`
+            <p><strong>UUID:</strong> ${data.uuid}</p>
+            <p><strong>Hostname:</strong> ${data.hostname}</p>
+            <p><strong>MAC:</strong> ${data.mac}</p>
+            <p><strong>IP:</strong> ${data.ip}</p>
+            <p><strong>Last Seen:</strong> ${data.last_seen}</p>
+            ${hwHTML}
+            ${appsHTML}
+        `;
+
+    }catch(err){
+        detailsDiv.innerHTML="Error loading client details.";
+    }
+}
+
+// LOAD CLIENTS
+async function loadClients(){
+    const search=document.getElementById("searchInput").value;
+    const tableBody=document.getElementById("clientsTableBody");
+    tableBody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
+
+    try{
+        const resp=await fetch("/api/clients?search="+encodeURIComponent(search));
+        const clients=await resp.json();
+
+        tableBody.innerHTML="";
+        let total=clients.length, online=0, offline=0;
+
+        if(total===0){
+            tableBody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
+        }
+
+        clients.forEach(client=>{
+            if(client.status==="Online") online++; else offline++;
+            const statusClass=client.status==="Online"?"status-online":"status-offline";
+
+            tableBody.innerHTML+=`
+                <tr>
+                    <td>${client.uuid}</td>
+                    <td>${client.hostname}</td>
+                    <td>${client.ip}</td>
+                    <td>${client.mac}</td>
+                    <td>${client.last_seen}</td>
+                    <td class="${statusClass}">${client.status}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="viewClient('${client.uuid}')">View</button>
+                        <a href="/export/pdf/${client.uuid}" class="btn btn-sm btn-secondary">PDF</a>
+                        <button class="btn btn-sm btn-danger" onclick="deleteClient('${client.uuid}')">Delete</button>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.getElementById("totalCount").innerText=total;
+        document.getElementById("onlineCount").innerText=online;
+        document.getElementById("offlineCount").innerText=offline;
+
+    }catch(err){
+        tableBody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Server error loading clients</td></tr>`;
+    }
+}
+
+loadClients();
+</script>
+
+</body>
+</html>
