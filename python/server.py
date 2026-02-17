@@ -2579,13 +2579,13 @@ from reportlab.lib import colors
 import tempfile
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-if not DATABASE_URL:
-    raise Exception("DATABASE_URL not set")
 
 app = Flask(__name__, template_folder="templates")
 
 # ---------------- DATABASE ----------------
 def get_db():
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL not set")
     return psycopg2.connect(DATABASE_URL, sslmode="require", connect_timeout=5)
 
 def init_db():
@@ -2597,16 +2597,19 @@ def init_db():
         mac_address TEXT,
         hostname TEXT,
         last_seen TEXT,
-        client_ip TEXT,
-        hardware_info TEXT,
-        installed_apps TEXT
+        ip TEXT,
+        hardware TEXT,
+        apps TEXT
     )
     """)
     con.commit()
     con.close()
 
 try:
-    init_db()
+    if DATABASE_URL:
+        init_db()
+    else:
+        print("WARNING: DATABASE_URL not set")
 except Exception as e:
     print("Database init failed:", e)
 
@@ -2620,48 +2623,37 @@ def safe_json(v):
 def status_from_last_seen(ts):
     try:
         t = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S")
-        delta = (datetime.datetime.now() - t).total_seconds()
-        return "Online" if delta <= 60 else "Offline"
+        return "Online" if (datetime.datetime.now() - t).seconds <= 60 else "Offline"
     except:
         return "Offline"
-
-def get_real_ip():
-    # Use X-Forwarded-For if behind a proxy (Render sets it)
-    return request.headers.get("X-Forwarded-For", request.remote_addr)
-
-# ---------------- LOGGING ----------------
-@app.before_request
-def log_real_ip():
-    ip = get_real_ip()
-    print(f"{ip} - - [{datetime.datetime.now().strftime('%d/%b/%Y:%H:%M:%S +0000')}] \"{request.method} {request.path} {request.environ.get('SERVER_PROTOCOL')}\"")
 
 # ---------------- ROUTES ----------------
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
+# ---------------- API ENDPOINTS ----------------
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
     try:
-        hardware = safe_json(data.get("hardware", {}))
-        apps = safe_json(data.get("apps", []))
+        hardware = json.loads(data["hardware"]) if isinstance(data.get("hardware"), str) else data.get("hardware", {})
+        apps = json.loads(data["apps"]) if isinstance(data.get("apps"), str) else data.get("apps", [])
 
-        # Prefer IP from client hardware, fallback to real IP
-        client_ip = hardware.get("IP Address") or get_real_ip() or "Unknown"
+        client_ip = hardware.get("IP Address", "Unknown")
 
         con = get_db()
         cur = con.cursor()
 
-        # Try UPDATE first
+        # UPDATE if exists
         cur.execute("""
             UPDATE clients SET
                 mac_address=%s,
                 hostname=%s,
                 last_seen=%s,
-                client_ip=%s,
-                hardware_info=%s,
-                installed_apps=%s
+                ip=%s,
+                hardware=%s,
+                apps=%s
             WHERE client_uuid=%s
         """, (
             data["mac"],
@@ -2673,7 +2665,7 @@ def api_report():
             data["uuid"]
         ))
 
-        # If no existing row, INSERT
+        # INSERT if new
         if cur.rowcount == 0:
             cur.execute("""
                 INSERT INTO clients (
@@ -2681,9 +2673,9 @@ def api_report():
                     mac_address,
                     hostname,
                     last_seen,
-                    client_ip,
-                    hardware_info,
-                    installed_apps
+                    ip,
+                    hardware,
+                    apps
                 ) VALUES (%s,%s,%s,%s,%s,%s,%s)
             """, (
                 data["uuid"],
@@ -2712,7 +2704,7 @@ def api_clients():
     if search:
         cur.execute("""
             SELECT * FROM clients
-            WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s OR client_ip ILIKE %s
+            WHERE client_uuid ILIKE %s OR hostname ILIKE %s OR mac_address ILIKE %s OR ip ILIKE %s
         """, (f"%{search}%", f"%{search}%", f"%{search}%", f"%{search}%"))
     else:
         cur.execute("SELECT * FROM clients")
@@ -2725,7 +2717,7 @@ def api_clients():
         "mac": r[1],
         "hostname": r[2],
         "last_seen": r[3],
-        "ip": r[4],  # This is now the real client IP
+        "ip": r[4],
         "status": status_from_last_seen(r[3])
     } for r in rows])
 
@@ -2745,7 +2737,7 @@ def api_client(uuid):
         "mac": r[1],
         "hostname": r[2],
         "last_seen": r[3],
-        "ip": r[4],  # Real client IP
+        "ip": r[4],
         "hardware": safe_json(r[5]),
         "apps": safe_json(r[6])
     })
@@ -2779,37 +2771,47 @@ def export_pdf(uuid):
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
         ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
     ]))
+
     elements.append(Paragraph("Hardware Info", styles["Heading2"]))
     elements.append(hw_table)
     elements.append(Spacer(1,12))
 
     apps = safe_json(r[6])
-    apps_data = [["Installed Apps"]]
-    for a in apps:
-        if isinstance(a, dict):
-            name = a.get("name", str(a))
-            apps_data.append([name])
-        else:
-            apps_data.append([str(a)])
-
+    apps_data = [["Installed Apps"]] + [[json.dumps(a)] for a in apps]
     apps_table = Table(apps_data, colWidths=[470])
     apps_table.setStyle(TableStyle([
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
         ('BACKGROUND',(0,0),(-1,0),colors.lightgrey)
     ]))
+
     elements.append(Paragraph("Installed Apps", styles["Heading2"]))
     elements.append(apps_table)
 
     doc.build(elements)
 
-    return send_file(path, as_attachment=True, mimetype="application/pdf", download_name=f"{uuid}.pdf")
+    return send_file(
+        path,
+        as_attachment=True,
+        mimetype="application/pdf",
+        download_name=f"{uuid}.pdf"
+    )
+
+# ---------------- DELETE CLIENT ----------------
+@app.route("/delete-client/<uuid>", methods=["DELETE"])
+def delete_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+    con.commit()
+    con.close()
+    return jsonify({"status":"deleted"})
 
 # ---------------- CSV EXPORT ----------------
 @app.route("/export/csv")
 def export_csv():
     con = get_db()
     cur = con.cursor()
-    cur.execute("SELECT client_uuid, mac_address, hostname, last_seen, client_ip FROM clients")
+    cur.execute("SELECT client_uuid, mac_address, hostname, last_seen, ip FROM clients")
     rows = cur.fetchall()
     con.close()
 
@@ -2818,7 +2820,11 @@ def export_csv():
         for r in rows:
             yield f"{r[0]},{r[1]},{r[2]},{r[3]},{r[4]}\n"
 
-    return Response(generate(), mimetype="text/csv", headers={"Content-Disposition": "attachment;filename=clients.csv"})
+    return Response(
+        generate(),
+        mimetype="text/csv",
+        headers={"Content-Disposition": "attachment;filename=clients.csv"}
+    )
 
 if __name__ == "__main__":
-    app.run(debug=True, host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(debug=True, host="0.0.0.0", port=5000)
