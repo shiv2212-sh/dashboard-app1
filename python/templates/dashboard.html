@@ -567,119 +567,41 @@
 
 
 
-<!-- <!DOCTYPE html>
-<html>
-<head>
-    <title>Client Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-
-<h1>Dashboard</h1>
-
-<button onclick="toggleTheme()">🌙 Dark Mode</button>
-<button onclick="loadClients()">🔄 Refresh</button>
-
-<table id="clientTable">
-    <thead>
-        <tr>
-            <th>Status</th>
-            <th>UUID</th>
-            <th>Hostname</th>
-            <th>IP</th>
-            <th>Last Seen</th>
-        </tr>
-    </thead>
-    <tbody></tbody>
-</table>
-
-<script src="{{ url_for('static', filename='dashboard.js') }}" defer></script>
-</body>
-</html> -->
-
-
-
-
-
-
-
-
-
-
-
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Enterprise Client Monitoring</title>
-
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
 <style>
-:root {
-    --light-bg: #f4f6f9;
-    --light-card: #ffffff;
-    --light-text: #1f2937;
-
-    --dark-bg: #0f172a;
-    --dark-card: #1e293b;
-    --dark-text: #f1f5f9;
-
-    --primary: #3b82f6;
-    --success: #22c55e;
-    --danger: #ef4444;
-}
-
-body.light-mode { background: var(--light-bg); color: var(--light-text); }
-body.dark-mode { background: var(--dark-bg); color: var(--dark-text); }
-
-.card { border-radius: 14px; border: none; }
-body.light-mode .card { background: var(--light-card); }
-body.dark-mode .card { background: var(--dark-card); }
-
-.stat-card { padding: 20px; text-align:center; font-weight:600; }
+body { background:#f4f6f9; color:#1f2937; }
+.card { border-radius:14px; border:none; margin-bottom:15px; }
+.stat-card { padding:20px; text-align:center; font-weight:600; }
 .stat-number { font-size:28px; }
-.status-online { color: var(--success); font-weight:bold; }
-.status-offline { color: var(--danger); font-weight:bold; }
-
+.status-online { color:#22c55e; font-weight:bold; }
+.status-offline { color:#ef4444; font-weight:bold; }
 .navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
-.toggle-btn { cursor:pointer; }
 </style>
 </head>
 <body>
 
-<!-- NAVBAR -->
-<div class="navbar-custom">
+<div class="navbar-custom bg-light">
     <h4>Enterprise Client Monitoring</h4>
-    <div>
-        <button class="btn btn-outline-secondary me-2" onclick="toggleMode()">🌙 Toggle</button>
-        <button class="btn btn-primary" onclick="loadClients()">Refresh</button>
-    </div>
+    <button class="btn btn-primary" onclick="loadClients()">Refresh</button>
 </div>
 
 <div class="container mt-4">
-
-    <!-- STATS -->
     <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm">Total Clients<div class="stat-number" id="totalCount">0</div></div>
-        </div>
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm">Online<div class="stat-number text-success" id="onlineCount">0</div></div>
-        </div>
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm">Offline<div class="stat-number text-danger" id="offlineCount">0</div></div>
-        </div>
+        <div class="col-md-4"><div class="card stat-card shadow-sm">Total Clients<div class="stat-number" id="totalCount">0</div></div></div>
+        <div class="col-md-4"><div class="card stat-card shadow-sm">Online<div class="stat-number" id="onlineCount">0</div></div></div>
+        <div class="col-md-4"><div class="card stat-card shadow-sm">Offline<div class="stat-number" id="offlineCount">0</div></div></div>
     </div>
 
-    <!-- SEARCH -->
     <div class="card p-4 mb-4 shadow-sm">
         <div class="row">
             <div class="col-md-10">
-                <input type="text" id="searchInput" class="form-control"
-                       placeholder="Search by hostname, UUID, MAC, IP..." onkeyup="loadClients()">
+                <input type="text" id="searchInput" class="form-control" placeholder="Search by hostname, UUID, MAC, IP..." onkeyup="loadClients()">
             </div>
             <div class="col-md-2">
                 <button class="btn btn-primary w-100" onclick="loadClients()">Search</button>
@@ -687,14 +609,11 @@ body.dark-mode .card { background: var(--dark-card); }
         </div>
     </div>
 
-    <!-- CLIENTS TABLE -->
     <div class="card p-4 shadow-sm">
         <div class="table-responsive">
             <table class="table table-hover align-middle">
                 <thead class="table-secondary">
-                    <tr>
-                        <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th width="220">Actions</th>
-                    </tr>
+                    <tr><th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th>Actions</th></tr>
                 </thead>
                 <tbody id="clientsTableBody">
                     <tr><td colspan="7" class="text-center">Loading...</td></tr>
@@ -702,82 +621,47 @@ body.dark-mode .card { background: var(--dark-card); }
             </table>
         </div>
     </div>
-
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
-// THEME TOGGLE
-function toggleMode() {
-    const body = document.body;
-    if (body.classList.contains("dark-mode")) {
-        body.classList.replace("dark-mode","light-mode");
-        localStorage.setItem("theme","light");
-    } else {
-        body.classList.replace("light-mode","dark-mode");
-        localStorage.setItem("theme","dark");
-    }
-}
-(function(){ const saved=localStorage.getItem("theme")||"dark"; document.body.classList.add(saved+"-mode"); })();
+const API_BASE = "https://dashboard-app1.onrender.com";
 
-// DELETE CLIENT
-async function deleteClient(uuid){
-    if(!confirm("Are you sure you want to delete this client?")) return;
-    await fetch("/delete-client/"+uuid,{method:"DELETE"});
-    loadClients();
-}
-
-// LOAD CLIENTS
 async function loadClients(){
-    const search=document.getElementById("searchInput").value;
-    const tableBody=document.getElementById("clientsTableBody");
-    tableBody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
-
+    const search = document.getElementById("searchInput").value;
+    const tbody = document.getElementById("clientsTableBody");
+    tbody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
     try{
-        const resp=await fetch("/api/clients?search="+encodeURIComponent(search));
-        const clients=await resp.json();
-
-        tableBody.innerHTML="";
+        const resp = await fetch(`${API_BASE}/api/clients?search=${encodeURIComponent(search)}`);
+        const clients = await resp.json();
+        tbody.innerHTML="";
         let total=clients.length, online=0, offline=0;
-
-        if(total===0){
-            tableBody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
-        }
-
-        clients.forEach(client=>{
-            if(client.status==="Online") online++; else offline++;
-            const statusClass=client.status==="Online"?"status-online":"status-offline";
-
-            tableBody.innerHTML+=`
+        if(total===0){ tbody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;}
+        clients.forEach(c=>{
+            if(c.status==="Online") online++; else offline++;
+            const cls=c.status==="Online"?"status-online":"status-offline";
+            tbody.innerHTML+=`
                 <tr>
-                    <td>${client.uuid}</td>
-                    <td>${client.hostname}</td>
-                    <td>${client.ip}</td>
-                    <td>${client.mac}</td>
-                    <td>${client.last_seen}</td>
-                    <td class="${statusClass}">${client.status}</td>
+                    <td>${c.uuid}</td>
+                    <td>${c.hostname}</td>
+                    <td>${c.ip}</td>
+                    <td>${c.mac}</td>
+                    <td>${c.last_seen}</td>
+                    <td class="${cls}">${c.status}</td>
                     <td>
-                        <!-- NEW: View navigates to a separate page -->
-                        <a href="/client/${client.uuid}" class="btn btn-sm btn-info">View</a>
-                        <a href="/export/pdf/${client.uuid}" class="btn btn-sm btn-secondary">PDF</a>
-                        <button class="btn btn-sm btn-danger" onclick="deleteClient('${client.uuid}')">Delete</button>
+                        <a href="${API_BASE}/client/${c.uuid}" class="btn btn-sm btn-info">View</a>
                     </td>
                 </tr>
             `;
         });
-
         document.getElementById("totalCount").innerText=total;
         document.getElementById("onlineCount").innerText=online;
         document.getElementById("offlineCount").innerText=offline;
-
-    }catch(err){
-        tableBody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Server error loading clients</td></tr>`;
+    }catch(e){
+        tbody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Error loading clients</td></tr>`;
     }
 }
 
 loadClients();
 </script>
-
 </body>
 </html>
