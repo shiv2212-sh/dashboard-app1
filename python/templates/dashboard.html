@@ -597,6 +597,8 @@ body.dark-mode .card { background: var(--dark-card); }
 .status-offline { color: var(--danger); font-weight:bold; }
 .navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
 .toggle-btn { cursor:pointer; }
+#clientDetails { margin-top:20px; }
+.table-apps th, .table-apps td { font-size:0.9rem; }
 </style>
 </head>
 <body>
@@ -644,7 +646,7 @@ body.dark-mode .card { background: var(--dark-card); }
             <table class="table table-hover align-middle">
                 <thead class="table-secondary">
                     <tr>
-                        <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th width="220">Actions</th>
+                        <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th width="250">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="clientsTableBody">
@@ -654,18 +656,41 @@ body.dark-mode .card { background: var(--dark-card); }
         </div>
     </div>
 
+    <!-- CLIENT DETAILS SECTION -->
+    <div id="clientDetails" style="display:none;">
+        <button class="btn btn-secondary mb-2" onclick="hideClientDetails()">← Back</button>
+        <h4>Client Details</h4>
+        <p><strong>UUID:</strong> <span id="detailUuid"></span></p>
+        <p><strong>Hostname:</strong> <span id="detailHostname"></span></p>
+        <p><strong>MAC:</strong> <span id="detailMac"></span></p>
+        <p><strong>IP:</strong> <span id="detailIp"></span></p>
+        <p><strong>Last Seen:</strong> <span id="detailLastSeen"></span></p>
+
+        <h5>Hardware Info</h5>
+        <table class="table table-striped">
+            <tbody id="hardwareTable"></tbody>
+        </table>
+
+        <h5>Installed Apps</h5>
+        <table class="table table-striped table-apps">
+            <thead>
+                <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th><th>History</th></tr>
+            </thead>
+            <tbody id="appsTable"></tbody>
+        </table>
+    </div>
+
 </div>
 
 <!-- APP HISTORY MODAL -->
-<div class="modal fade" id="historyModal" tabindex="-1">
+<div class="modal fade" id="appHistoryModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">App History</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="historyContent">
-                Loading...
+            <div class="modal-body" id="appHistoryContent">
             </div>
         </div>
     </div>
@@ -673,10 +698,10 @@ body.dark-mode .card { background: var(--dark-card); }
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// DARK MODE TOGGLE
+// THEME TOGGLE
 function toggleMode() {
     const body = document.body;
-    if(body.classList.contains("dark-mode")){
+    if (body.classList.contains("dark-mode")) {
         body.classList.replace("dark-mode","light-mode");
         localStorage.setItem("theme","light");
     } else {
@@ -684,10 +709,7 @@ function toggleMode() {
         localStorage.setItem("theme","dark");
     }
 }
-(function(){
-    const saved = localStorage.getItem("theme") || "dark";
-    document.body.classList.add(saved+"-mode");
-})();
+(function(){ const saved=localStorage.getItem("theme")||"dark"; document.body.classList.add(saved+"-mode"); })();
 
 // DELETE CLIENT
 async function deleteClient(uuid){
@@ -696,49 +718,86 @@ async function deleteClient(uuid){
     loadClients();
 }
 
-// OPEN CLIENT DETAILS PAGE
-function viewClient(uuid){
-    window.location.href = `/client/${uuid}`;
+// VIEW CLIENT DETAILS
+async function viewClient(uuid){
+    const section = document.getElementById("clientDetails");
+    section.style.display="block";
+
+    const resp = await fetch("/api/client/"+uuid);
+    const data = await resp.json();
+
+    document.getElementById("detailUuid").innerText=data.client_uuid;
+    document.getElementById("detailHostname").innerText=data.hostname;
+    document.getElementById("detailMac").innerText=data.mac;
+    document.getElementById("detailIp").innerText=data.ip;
+    document.getElementById("detailLastSeen").innerText=data.last_seen;
+
+    // Hardware table
+    const hwTable = document.getElementById("hardwareTable");
+    hwTable.innerHTML="";
+    for(let k in data.hardware){
+        hwTable.innerHTML+=`<tr><td>${k}</td><td>${data.hardware[k]}</td></tr>`;
+    }
+
+    // Apps table
+    const appsTable = document.getElementById("appsTable");
+    appsTable.innerHTML="";
+    data.apps.forEach(app=>{
+        appsTable.innerHTML+=`
+            <tr>
+                <td>${app.name}</td>
+                <td>${app.version}</td>
+                <td>${app.install_date}</td>
+                <td>${app.size_bytes}</td>
+                <td><button class="btn btn-sm btn-info" onclick='showAppHistory(${JSON.stringify(app.history)})'>History</button></td>
+            </tr>
+        `;
+    });
 }
 
-// SHOW APP HISTORY
-function showHistory(app){
-    const modalEl = document.getElementById("historyModal");
-    const modal = new bootstrap.Modal(modalEl);
-    const contentDiv = document.getElementById("historyContent");
-    contentDiv.innerHTML = "<table class='table table-bordered'><tr><th>Version</th><th>Install Date</th><th>Size (Bytes)</th></tr>";
-    if(app.history && app.history.length>0){
-        app.history.forEach(h=>{
-            contentDiv.innerHTML += `<tr><td>${h.version || ""}</td><td>${h.install_date || ""}</td><td>${h.size_bytes || 0}</td></tr>`;
+function hideClientDetails(){
+    document.getElementById("clientDetails").style.display="none";
+}
+
+// SHOW APP HISTORY POPUP
+function showAppHistory(history){
+    const content = document.getElementById("appHistoryContent");
+    if(history.length===0) content.innerHTML="<p>No history available</p>";
+    else{
+        let html="<table class='table table-striped'><tr><th>Date</th><th>Event</th></tr>";
+        history.forEach(h=>{
+            html+=`<tr><td>${h.date||''}</td><td>${h.event||''}</td></tr>`;
         });
-    } else {
-        contentDiv.innerHTML += `<tr><td colspan='3' class='text-center'>No history available</td></tr>`;
+        html+="</table>";
+        content.innerHTML=html;
     }
-    contentDiv.innerHTML += "</table>";
+    const modalEl = document.getElementById("appHistoryModal");
+    const modal = new bootstrap.Modal(modalEl);
     modal.show();
 }
 
 // LOAD CLIENTS
 async function loadClients(){
-    const search = document.getElementById("searchInput").value;
-    const tableBody = document.getElementById("clientsTableBody");
-    tableBody.innerHTML = `<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
+    const search=document.getElementById("searchInput").value;
+    const tableBody=document.getElementById("clientsTableBody");
+    tableBody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
 
     try{
-        const resp = await fetch("/api/clients?search="+encodeURIComponent(search));
-        const clients = await resp.json();
+        const resp=await fetch("/api/clients?search="+encodeURIComponent(search));
+        const clients=await resp.json();
 
-        tableBody.innerHTML = "";
-        let total = clients.length, online=0, offline=0;
+        tableBody.innerHTML="";
+        let total=clients.length, online=0, offline=0;
 
         if(total===0){
-            tableBody.innerHTML = `<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
+            tableBody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
         }
 
         clients.forEach(client=>{
             if(client.status==="Online") online++; else offline++;
-            const statusClass = client.status==="Online"?"status-online":"status-offline";
-            tableBody.innerHTML += `
+            const statusClass=client.status==="Online"?"status-online":"status-offline";
+
+            tableBody.innerHTML+=`
                 <tr>
                     <td>${client.client_uuid}</td>
                     <td>${client.hostname}</td>
@@ -754,12 +813,12 @@ async function loadClients(){
             `;
         });
 
-        document.getElementById("totalCount").innerText = total;
-        document.getElementById("onlineCount").innerText = online;
-        document.getElementById("offlineCount").innerText = offline;
+        document.getElementById("totalCount").innerText=total;
+        document.getElementById("onlineCount").innerText=online;
+        document.getElementById("offlineCount").innerText=offline;
 
     }catch(err){
-        tableBody.innerHTML = `<tr><td colspan="7" class="text-center text-danger">Server error loading clients</td></tr>`;
+        tableBody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Server error loading clients</td></tr>`;
     }
 }
 
