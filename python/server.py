@@ -2333,9 +2333,10 @@ if not DATABASE_URL:
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
-# ==============================
-# CLIENT DATA RECEIVE ENDPOINT
-# ==============================
+
+# ===============================
+# RECEIVE CLIENT DATA
+# ===============================
 @app.route("/api/client", methods=["POST"])
 def receive_client():
     try:
@@ -2346,6 +2347,7 @@ def receive_client():
         hostname = data["hostname"]
         ip = data["ip"]
         client_ip = request.remote_addr
+
         hardware = json.dumps(data["hardware"])
         apps = json.dumps(data["apps"])
 
@@ -2353,7 +2355,7 @@ def receive_client():
         cur = conn.cursor()
 
         cur.execute("""
-            INSERT INTO clients 
+            INSERT INTO clients
             (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps, client_ip)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (client_uuid)
@@ -2386,22 +2388,31 @@ def receive_client():
         return jsonify({"error": str(e)}), 500
 
 
-# ==============================
+# ===============================
 # DASHBOARD PAGE
-# ==============================
+# ===============================
 @app.route("/")
 def dashboard():
-    conn = get_connection()
-    cur = conn.cursor()
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
 
-    cur.execute("SELECT * FROM clients ORDER BY last_seen DESC;")
-    rows = cur.fetchall()
+        cur.execute("SELECT * FROM clients ORDER BY last_seen DESC;")
+        rows = cur.fetchall()
 
-    cur.close()
-    conn.close()
+        cur.close()
+        conn.close()
 
-    return render_template("dashboard.html", clients=rows)
+        return render_template("dashboard.html", clients=rows)
+
+    except Exception as e:
+        return f"Database Error: {str(e)}"
 
 
+# ===============================
+# RUN SERVER (LOCAL + CLOUD)
+# ===============================
 if __name__ == "__main__":
-    app.run(debug=True)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
