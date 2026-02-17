@@ -572,38 +572,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Data Monitoring</title>
+<title>Enterprise Client Monitoring</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-
 <style>
 :root {
     --light-bg: #f4f6f9;
     --light-card: #ffffff;
     --light-text: #1f2937;
-
     --dark-bg: #0f172a;
     --dark-card: #1e293b;
     --dark-text: #f1f5f9;
-
     --primary: #3b82f6;
     --success: #22c55e;
     --danger: #ef4444;
 }
-
 body.light-mode { background: var(--light-bg); color: var(--light-text); }
 body.dark-mode { background: var(--dark-bg); color: var(--dark-text); }
-
 .card { border-radius: 14px; border: none; }
 body.light-mode .card { background: var(--light-card); }
 body.dark-mode .card { background: var(--dark-card); }
-
 .stat-card { padding: 20px; text-align:center; font-weight:600; }
 .stat-number { font-size:28px; }
 .status-online { color: var(--success); font-weight:bold; }
 .status-offline { color: var(--danger); font-weight:bold; }
-
 .navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
 .toggle-btn { cursor:pointer; }
+.modal-lg { max-width: 90% !important; }
 </style>
 </head>
 <body>
@@ -651,7 +645,7 @@ body.dark-mode .card { background: var(--dark-card); }
             <table class="table table-hover align-middle">
                 <thead class="table-secondary">
                     <tr>
-                        <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th width="220">Actions</th>
+                        <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th width="250">Actions</th>
                     </tr>
                 </thead>
                 <tbody id="clientsTableBody">
@@ -660,7 +654,6 @@ body.dark-mode .card { background: var(--dark-card); }
             </table>
         </div>
     </div>
-
 </div>
 
 <!-- APP HISTORY MODAL -->
@@ -671,17 +664,14 @@ body.dark-mode .card { background: var(--dark-card); }
                 <h5 class="modal-title">App History</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="appHistoryBody">
-                Loading...
-            </div>
+            <div class="modal-body" id="appHistoryContent">Loading...</div>
         </div>
     </div>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
-// THEME TOGGLE
+/* THEME TOGGLE */
 function toggleMode() {
     const body = document.body;
     if (body.classList.contains("dark-mode")) {
@@ -694,65 +684,60 @@ function toggleMode() {
 }
 (function(){ const saved=localStorage.getItem("theme")||"dark"; document.body.classList.add(saved+"-mode"); })();
 
-// DELETE CLIENT
+/* DELETE CLIENT */
 async function deleteClient(uuid){
     if(!confirm("Are you sure you want to delete this client?")) return;
     await fetch("/delete-client/"+uuid,{method:"DELETE"});
     loadClients();
 }
 
-// VIEW CLIENT DETAILS (new page)
+/* VIEW CLIENT (opens new page) */
 function viewClient(uuid){
-    window.location.href = "/client/" + uuid;
+    window.location.href="/client/"+uuid;
 }
 
-// OPEN APP HISTORY MODAL
+/* SHOW APP HISTORY POPUP */
 async function showAppHistory(uuid, appName){
     const modalEl = document.getElementById("appHistoryModal");
     const modal = new bootstrap.Modal(modalEl);
-    const body = document.getElementById("appHistoryBody");
-    body.innerHTML = "Loading...";
+    const content = document.getElementById("appHistoryContent");
+    content.innerHTML="Loading...";
     modal.show();
 
     try{
         const resp = await fetch(`/api/app-history/${uuid}/${encodeURIComponent(appName)}`);
-        const history = await resp.json();
-        if(history.length === 0){
-            body.innerHTML = "<p>No history found</p>";
+        const data = await resp.json();
+        if(data.length===0){
+            content.innerHTML="<p>No history available for this app.</p>";
             return;
         }
-        let html = `<table class="table table-bordered"><thead><tr><th>Version</th><th>Install Date</th><th>Size (Bytes)</th><th>Timestamp</th></tr></thead><tbody>`;
-        history.forEach(h=>{
-            html += `<tr><td>${h.version || ""}</td><td>${h.install_date || ""}</td><td>${h.size_bytes || ""}</td><td>${h.timestamp || ""}</td></tr>`;
+        let html=`<table class="table table-striped"><thead><tr><th>Version</th><th>Install Date</th><th>Size (Bytes)</th><th>Timestamp</th></tr></thead><tbody>`;
+        data.forEach(d=>{
+            html+=`<tr><td>${d.version||""}</td><td>${d.install_date||""}</td><td>${d.size_bytes||""}</td><td>${d.timestamp||""}</td></tr>`;
         });
-        html += "</tbody></table>";
-        body.innerHTML = html;
-    }catch(err){
-        body.innerHTML = "<p>Error loading history</p>";
+        html+="</tbody></table>";
+        content.innerHTML=html;
+    }catch(e){
+        content.innerHTML="<p>Error loading history.</p>";
     }
 }
 
-// LOAD CLIENTS
+/* LOAD CLIENTS */
 async function loadClients(){
     const search=document.getElementById("searchInput").value;
     const tableBody=document.getElementById("clientsTableBody");
     tableBody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
-
     try{
         const resp=await fetch("/api/clients?search="+encodeURIComponent(search));
         const clients=await resp.json();
-
         tableBody.innerHTML="";
         let total=clients.length, online=0, offline=0;
-
         if(total===0){
             tableBody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
         }
-
         clients.forEach(client=>{
             if(client.status==="Online") online++; else offline++;
             const statusClass=client.status==="Online"?"status-online":"status-offline";
-
             tableBody.innerHTML+=`
                 <tr>
                     <td>${client.client_uuid}</td>
@@ -763,29 +748,20 @@ async function loadClients(){
                     <td class="${statusClass}">${client.status}</td>
                     <td>
                         <button class="btn btn-sm btn-info" onclick="viewClient('${client.client_uuid}')">View</button>
-                        <button class="btn btn-sm btn-secondary" onclick="loadClientPDF('${client.client_uuid}')">PDF</button>
+                        <button class="btn btn-sm btn-secondary" onclick="window.open('/export/pdf/${client.client_uuid}')">PDF</button>
                         <button class="btn btn-sm btn-danger" onclick="deleteClient('${client.client_uuid}')">Delete</button>
                     </td>
                 </tr>
             `;
         });
-
         document.getElementById("totalCount").innerText=total;
         document.getElementById("onlineCount").innerText=online;
         document.getElementById("offlineCount").innerText=offline;
-
     }catch(err){
         tableBody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Server error loading clients</td></tr>`;
     }
 }
-
-// DOWNLOAD PDF
-function loadClientPDF(uuid){
-    window.open(`/export/pdf/${uuid}`, "_blank");
-}
-
 loadClients();
 </script>
-
 </body>
 </html>
