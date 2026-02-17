@@ -705,21 +705,6 @@ body.dark-mode .card { background: var(--dark-card); }
 
 </div>
 
-<!-- CLIENT DETAILS MODAL -->
-<div class="modal fade" id="clientModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Client Details</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="clientDetails">
-                Loading...
-            </div>
-        </div>
-    </div>
-</div>
-
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
@@ -741,53 +726,6 @@ async function deleteClient(uuid){
     if(!confirm("Are you sure you want to delete this client?")) return;
     await fetch("/delete-client/"+uuid,{method:"DELETE"});
     loadClients();
-}
-
-// VIEW CLIENT MODAL
-async function viewClient(uuid){
-    const modalEl = document.getElementById("clientModal");
-    const modal = new bootstrap.Modal(modalEl);
-    const detailsDiv = document.getElementById("clientDetails");
-
-    detailsDiv.innerHTML = "Loading...";
-    modal.show();
-
-    try{
-        const resp = await fetch("/api/client/"+uuid);
-        const data = await resp.json();
-
-        if(data.error){
-            detailsDiv.innerHTML="Client not found.";
-            return;
-        }
-
-        let hwHTML="<h6>Hardware Information</h6><ul>";
-        for(let k in data.hardware){
-            hwHTML+=`<li><strong>${k}:</strong> ${data.hardware[k]}</li>`;
-        }
-        hwHTML+="</ul>";
-
-        let appsHTML="<h6>Installed Applications</h6><ul>";
-        data.apps.forEach(app=>{
-            if(typeof app==="object"){
-                appsHTML+=`<li>${app.name || JSON.stringify(app)}</li>`;
-            } else appsHTML+=`<li>${app}</li>`;
-        });
-        appsHTML+="</ul>";
-
-        detailsDiv.innerHTML=`
-            <p><strong>UUID:</strong> ${data.uuid}</p>
-            <p><strong>Hostname:</strong> ${data.hostname}</p>
-            <p><strong>MAC:</strong> ${data.mac}</p>
-            <p><strong>IP:</strong> ${data.ip}</p>
-            <p><strong>Last Seen:</strong> ${data.last_seen}</p>
-            ${hwHTML}
-            ${appsHTML}
-        `;
-
-    }catch(err){
-        detailsDiv.innerHTML="Error loading client details.";
-    }
 }
 
 // LOAD CLIENTS
@@ -820,7 +758,8 @@ async function loadClients(){
                     <td>${client.last_seen}</td>
                     <td class="${statusClass}">${client.status}</td>
                     <td>
-                        <button class="btn btn-sm btn-info" onclick="viewClient('${client.uuid}')">View</button>
+                        <!-- NEW: View navigates to a separate page -->
+                        <a href="/client/${client.uuid}" class="btn btn-sm btn-info">View</a>
                         <a href="/export/pdf/${client.uuid}" class="btn btn-sm btn-secondary">PDF</a>
                         <button class="btn btn-sm btn-danger" onclick="deleteClient('${client.uuid}')">Delete</button>
                     </td>
