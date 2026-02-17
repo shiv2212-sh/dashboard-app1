@@ -2625,6 +2625,16 @@ def status_from_last_seen(ts):
     except:
         return "Offline"
 
+def get_real_ip():
+    # Use X-Forwarded-For if behind a proxy (Render sets it)
+    return request.headers.get("X-Forwarded-For", request.remote_addr)
+
+# ---------------- LOGGING ----------------
+@app.before_request
+def log_real_ip():
+    ip = get_real_ip()
+    print(f"{ip} - - [{datetime.datetime.now().strftime('%d/%b/%Y:%H:%M:%S +0000')}] \"{request.method} {request.path} {request.environ.get('SERVER_PROTOCOL')}\"")
+
 # ---------------- ROUTES ----------------
 @app.route("/")
 def dashboard():
@@ -2637,7 +2647,8 @@ def api_report():
         hardware = safe_json(data.get("hardware", {}))
         apps = safe_json(data.get("apps", []))
 
-        client_ip = hardware.get("IP Address") or request.remote_addr or "Unknown"
+        # Prefer IP from client hardware, fallback to real IP
+        client_ip = hardware.get("IP Address") or get_real_ip() or "Unknown"
 
         con = get_db()
         cur = con.cursor()
@@ -2714,7 +2725,7 @@ def api_clients():
         "mac": r[1],
         "hostname": r[2],
         "last_seen": r[3],
-        "ip": r[4],
+        "ip": r[4],  # This is now the real client IP
         "status": status_from_last_seen(r[3])
     } for r in rows])
 
@@ -2734,7 +2745,7 @@ def api_client(uuid):
         "mac": r[1],
         "hostname": r[2],
         "last_seen": r[3],
-        "ip": r[4],
+        "ip": r[4],  # Real client IP
         "hardware": safe_json(r[5]),
         "apps": safe_json(r[6])
     })
