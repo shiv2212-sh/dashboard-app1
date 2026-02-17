@@ -2910,6 +2910,11 @@ def status_from_last_seen(ts):
 def dashboard():
     return render_template("dashboard.html")
 
+# ---------------- CLIENT DETAIL PAGE ----------------
+@app.route("/client/<uuid>")
+def client_page(uuid):
+    return render_template("client_detail.html", uuid=uuid)
+
 # ---------------- API ENDPOINTS ----------------
 @app.route("/api/report", methods=["POST"])
 def api_report():
