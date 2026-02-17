@@ -575,251 +575,100 @@
 <title>Enterprise Client Monitoring</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
-:root {
-    --light-bg: #f4f6f9;
-    --light-card: #ffffff;
-    --light-text: #1f2937;
-    --dark-bg: #0f172a;
-    --dark-card: #1e293b;
-    --dark-text: #f1f5f9;
-    --primary: #3b82f6;
-    --success: #22c55e;
-    --danger: #ef4444;
-}
-body.light-mode { background: var(--light-bg); color: var(--light-text); }
-body.dark-mode { background: var(--dark-bg); color: var(--dark-text); }
-.card { border-radius: 14px; border: none; }
-body.light-mode .card { background: var(--light-card); }
-body.dark-mode .card { background: var(--dark-card); }
-.stat-card { padding: 20px; text-align:center; font-weight:600; }
-.stat-number { font-size:28px; }
-.status-online { color: var(--success); font-weight:bold; }
-.status-offline { color: var(--danger); font-weight:bold; }
-.navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
-.toggle-btn { cursor:pointer; }
-#clientDetails { margin-top:20px; }
-.table-apps th, .table-apps td { font-size:0.9rem; }
+:root { --light-bg:#f4f6f9; --light-card:#fff; --light-text:#1f2937; --dark-bg:#0f172a; --dark-card:#1e293b; --dark-text:#f1f5f9; --primary:#3b82f6; --success:#22c55e; --danger:#ef4444; }
+body.light-mode{background:var(--light-bg); color:var(--light-text);} body.dark-mode{background:var(--dark-bg); color:var(--dark-text);}
+.card{border-radius:14px; border:none;} body.light-mode .card{background:var(--light-card);} body.dark-mode .card{background:var(--dark-card);}
+.stat-card{padding:20px;text-align:center;font-weight:600;} .stat-number{font-size:28px;} .status-online{color:var(--success); font-weight:bold;} .status-offline{color:var(--danger); font-weight:bold;}
+.navbar-custom{padding:18px 30px; display:flex; justify-content:space-between; align-items:center;}
 </style>
 </head>
 <body>
 
-<!-- NAVBAR -->
 <div class="navbar-custom">
-    <h4>Enterprise Client Monitoring</h4>
-    <div>
-        <button class="btn btn-outline-secondary me-2" onclick="toggleMode()">🌙 Toggle</button>
-        <button class="btn btn-primary" onclick="loadClients()">Refresh</button>
-    </div>
+<h4>Enterprise Client Monitoring</h4>
+<div>
+<button class="btn btn-outline-secondary me-2" onclick="toggleMode()">🌙 Toggle</button>
+<button class="btn btn-primary" onclick="loadClients()">Refresh</button>
+</div>
 </div>
 
 <div class="container mt-4">
-
-    <!-- STATS -->
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm">Total Clients<div class="stat-number" id="totalCount">0</div></div>
-        </div>
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm">Online<div class="stat-number text-success" id="onlineCount">0</div></div>
-        </div>
-        <div class="col-md-4">
-            <div class="card stat-card shadow-sm">Offline<div class="stat-number text-danger" id="offlineCount">0</div></div>
-        </div>
-    </div>
-
-    <!-- SEARCH -->
-    <div class="card p-4 mb-4 shadow-sm">
-        <div class="row">
-            <div class="col-md-10">
-                <input type="text" id="searchInput" class="form-control"
-                       placeholder="Search by hostname, UUID, MAC, IP..." onkeyup="loadClients()">
-            </div>
-            <div class="col-md-2">
-                <button class="btn btn-primary w-100" onclick="loadClients()">Search</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- CLIENTS TABLE -->
-    <div class="card p-4 shadow-sm">
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-secondary">
-                    <tr>
-                        <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th width="250">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="clientsTableBody">
-                    <tr><td colspan="7" class="text-center">Loading...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <!-- CLIENT DETAILS SECTION -->
-    <div id="clientDetails" style="display:none;">
-        <button class="btn btn-secondary mb-2" onclick="hideClientDetails()">← Back</button>
-        <h4>Client Details</h4>
-        <p><strong>UUID:</strong> <span id="detailUuid"></span></p>
-        <p><strong>Hostname:</strong> <span id="detailHostname"></span></p>
-        <p><strong>MAC:</strong> <span id="detailMac"></span></p>
-        <p><strong>IP:</strong> <span id="detailIp"></span></p>
-        <p><strong>Last Seen:</strong> <span id="detailLastSeen"></span></p>
-
-        <h5>Hardware Info</h5>
-        <table class="table table-striped">
-            <tbody id="hardwareTable"></tbody>
-        </table>
-
-        <h5>Installed Apps</h5>
-        <table class="table table-striped table-apps">
-            <thead>
-                <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th><th>History</th></tr>
-            </thead>
-            <tbody id="appsTable"></tbody>
-        </table>
-    </div>
-
+<div class="row mb-4">
+<div class="col-md-4"><div class="card stat-card shadow-sm">Total Clients<div class="stat-number" id="totalCount">0</div></div></div>
+<div class="col-md-4"><div class="card stat-card shadow-sm">Online<div class="stat-number text-success" id="onlineCount">0</div></div></div>
+<div class="col-md-4"><div class="card stat-card shadow-sm">Offline<div class="stat-number text-danger" id="offlineCount">0</div></div></div>
 </div>
 
-<!-- APP HISTORY MODAL -->
-<div class="modal fade" id="appHistoryModal" tabindex="-1">
-    <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">App History</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body" id="appHistoryContent">
-            </div>
-        </div>
-    </div>
+<div class="card p-4 mb-4 shadow-sm">
+<div class="row">
+<div class="col-md-10"><input type="text" id="searchInput" class="form-control" placeholder="Search by hostname, UUID, MAC, IP..." onkeyup="loadClients()"></div>
+<div class="col-md-2"><button class="btn btn-primary w-100" onclick="loadClients()">Search</button></div>
+</div>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<div class="card p-4 shadow-sm">
+<div class="table-responsive">
+<table class="table table-hover align-middle">
+<thead class="table-secondary">
+<tr><th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th>Actions</th></tr>
+</thead>
+<tbody id="clientsTableBody">
+<tr><td colspan="7" class="text-center">Loading...</td></tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
 <script>
-// THEME TOGGLE
-function toggleMode() {
-    const body = document.body;
-    if (body.classList.contains("dark-mode")) {
-        body.classList.replace("dark-mode","light-mode");
-        localStorage.setItem("theme","light");
-    } else {
-        body.classList.replace("light-mode","dark-mode");
-        localStorage.setItem("theme","dark");
-    }
-}
-(function(){ const saved=localStorage.getItem("theme")||"dark"; document.body.classList.add(saved+"-mode"); })();
+function toggleMode(){
+const body=document.body;
+if(body.classList.contains("dark-mode")){
+body.classList.replace("dark-mode","light-mode");
+localStorage.setItem("theme","light");
+}else{
+body.classList.replace("light-mode","dark-mode");
+localStorage.setItem("theme","dark");
+}}
+(function(){const saved=localStorage.getItem("theme")||"dark"; document.body.classList.add(saved+"-mode");})();
 
-// DELETE CLIENT
 async function deleteClient(uuid){
-    if(!confirm("Are you sure you want to delete this client?")) return;
-    await fetch("/delete-client/"+uuid,{method:"DELETE"});
-    loadClients();
+if(!confirm("Are you sure you want to delete this client?")) return;
+await fetch("/delete-client/"+uuid,{method:"DELETE"});
+loadClients();
 }
 
-// VIEW CLIENT DETAILS
-async function viewClient(uuid){
-    const section = document.getElementById("clientDetails");
-    section.style.display="block";
-
-    const resp = await fetch("/api/client/"+uuid);
-    const data = await resp.json();
-
-    document.getElementById("detailUuid").innerText=data.client_uuid;
-    document.getElementById("detailHostname").innerText=data.hostname;
-    document.getElementById("detailMac").innerText=data.mac;
-    document.getElementById("detailIp").innerText=data.ip;
-    document.getElementById("detailLastSeen").innerText=data.last_seen;
-
-    // Hardware table
-    const hwTable = document.getElementById("hardwareTable");
-    hwTable.innerHTML="";
-    for(let k in data.hardware){
-        hwTable.innerHTML+=`<tr><td>${k}</td><td>${data.hardware[k]}</td></tr>`;
-    }
-
-    // Apps table
-    const appsTable = document.getElementById("appsTable");
-    appsTable.innerHTML="";
-    data.apps.forEach(app=>{
-        appsTable.innerHTML+=`
-            <tr>
-                <td>${app.name}</td>
-                <td>${app.version}</td>
-                <td>${app.install_date}</td>
-                <td>${app.size_bytes}</td>
-                <td><button class="btn btn-sm btn-info" onclick='showAppHistory(${JSON.stringify(app.history)})'>History</button></td>
-            </tr>
-        `;
-    });
-}
-
-function hideClientDetails(){
-    document.getElementById("clientDetails").style.display="none";
-}
-
-// SHOW APP HISTORY POPUP
-function showAppHistory(history){
-    const content = document.getElementById("appHistoryContent");
-    if(history.length===0) content.innerHTML="<p>No history available</p>";
-    else{
-        let html="<table class='table table-striped'><tr><th>Date</th><th>Event</th></tr>";
-        history.forEach(h=>{
-            html+=`<tr><td>${h.date||''}</td><td>${h.event||''}</td></tr>`;
-        });
-        html+="</table>";
-        content.innerHTML=html;
-    }
-    const modalEl = document.getElementById("appHistoryModal");
-    const modal = new bootstrap.Modal(modalEl);
-    modal.show();
-}
-
-// LOAD CLIENTS
 async function loadClients(){
-    const search=document.getElementById("searchInput").value;
-    const tableBody=document.getElementById("clientsTableBody");
-    tableBody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
+const search=document.getElementById("searchInput").value;
+const tableBody=document.getElementById("clientsTableBody");
+tableBody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
 
-    try{
-        const resp=await fetch("/api/clients?search="+encodeURIComponent(search));
-        const clients=await resp.json();
-
-        tableBody.innerHTML="";
-        let total=clients.length, online=0, offline=0;
-
-        if(total===0){
-            tableBody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
-        }
-
-        clients.forEach(client=>{
-            if(client.status==="Online") online++; else offline++;
-            const statusClass=client.status==="Online"?"status-online":"status-offline";
-
-            tableBody.innerHTML+=`
-                <tr>
-                    <td>${client.client_uuid}</td>
-                    <td>${client.hostname}</td>
-                    <td>${client.ip}</td>
-                    <td>${client.mac}</td>
-                    <td>${client.last_seen}</td>
-                    <td class="${statusClass}">${client.status}</td>
-                    <td>
-                        <button class="btn btn-sm btn-info" onclick="viewClient('${client.client_uuid}')">View</button>
-                        <button class="btn btn-sm btn-danger" onclick="deleteClient('${client.client_uuid}')">Delete</button>
-                    </td>
-                </tr>
-            `;
-        });
-
-        document.getElementById("totalCount").innerText=total;
-        document.getElementById("onlineCount").innerText=online;
-        document.getElementById("offlineCount").innerText=offline;
-
-    }catch(err){
-        tableBody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Server error loading clients</td></tr>`;
-    }
+try{
+const resp=await fetch("/api/clients?search="+encodeURIComponent(search));
+const clients=await resp.json();
+tableBody.innerHTML="";
+let total=clients.length, online=0, offline=0;
+if(total===0){tableBody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;}
+clients.forEach(client=>{
+if(client.status==="Online") online++; else offline++;
+const statusClass=client.status==="Online"?"status-online":"status-offline";
+tableBody.innerHTML+=`
+<tr>
+<td>${client.uuid}</td>
+<td>${client.hostname}</td>
+<td>${client.ip}</td>
+<td>${client.mac}</td>
+<td>${client.last_seen}</td>
+<td class="${statusClass}">${client.status}</td>
+<td>
+<a href="/client/${client.uuid}" class="btn btn-sm btn-info">View</a>
+<button class="btn btn-sm btn-danger" onclick="deleteClient('${client.uuid}')">Delete</button>
+</td>
+</tr>`;});
+document.getElementById("totalCount").innerText=total;
+document.getElementById("onlineCount").innerText=online;
+document.getElementById("offlineCount").innerText=offline;
+}catch(err){tableBody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Server error loading clients</td></tr>`;}
 }
 
 loadClients();
