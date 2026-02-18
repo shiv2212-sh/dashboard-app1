@@ -645,6 +645,39 @@ button{
     margin-bottom:10px;
     font-size:16px;
 }
+
+/* ================= MODAL STYLES ================= */
+.modal{
+    display:none;
+    position:fixed;
+    z-index:1000;
+    left:0; top:0;
+    width:100%; height:100%;
+    background:rgba(0,0,0,0.5);
+    justify-content:center;
+    align-items:center;
+}
+.modal-content{
+    background:white;
+    padding:20px;
+    border-radius:10px;
+    width:80%;
+    max-height:80%;
+    overflow-y:auto;
+}
+.dark .modal-content{background:#2b2b2b;color:white;}
+.modal-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:10px;
+}
+.modal-header h3{margin:0;}
+.modal-close{
+    cursor:pointer;
+    font-size:20px;
+    font-weight:bold;
+}
 </style>
 </head>
 <body>
@@ -684,7 +717,7 @@ button{
 <div style="margin-bottom:15px;">
     <button class="btn-back" onclick="goBack()">Back</button>
     <button class="btn-pdf" onclick="downloadPDF()">Export PDF</button>
-    <button class="btn-history" onclick="viewHistory()">App History</button>
+    <button class="btn-history" onclick="openHistoryModal()">View App History</button>
 </div>
 
 <div class="card" id="clientInfo"></div>
@@ -700,13 +733,17 @@ button{
 <div id="appsSection"></div>
 </div>
 
-<div class="card" id="historySection" style="display:none;">
-    <div class="section-title">App History</div>
+</div>
+
+<!-- ================= MODAL ================= -->
+<div id="historyModal" class="modal">
+<div class="modal-content">
+    <div class="modal-header">
+        <h3>App History</h3>
+        <span class="modal-close" onclick="closeHistoryModal()">&times;</span>
+    </div>
     <div id="historyContent"></div>
 </div>
-
-</div>
-
 </div>
 
 <script>
@@ -714,13 +751,8 @@ let allClients = [];
 let currentUUID = "";
 let currentApps = [];
 
-function toggleDark(){
-    document.body.classList.toggle("dark");
-}
-
-function manualRefresh(){
-    loadClients();
-}
+function toggleDark(){document.body.classList.toggle("dark");}
+function manualRefresh(){loadClients();}
 
 async function loadClients(){
     const res = await fetch("/api/clients");
@@ -729,10 +761,8 @@ async function loadClients(){
 
     const tbody = document.querySelector("#clientsTable tbody");
     tbody.innerHTML = "";
-
     data.forEach(c=>{
-        const row = `
-        <tr>
+        const row = `<tr>
             <td>${c.uuid}</td>
             <td>${c.hostname}</td>
             <td>${c.ip}</td>
@@ -750,9 +780,7 @@ async function loadClients(){
 function filterClients(){
     const search = document.getElementById("searchInput").value.toLowerCase();
     const rows = document.querySelectorAll("#clientsTable tbody tr");
-    rows.forEach(r=>{
-        r.style.display = r.innerText.toLowerCase().includes(search) ? "" : "none";
-    });
+    rows.forEach(r=>{r.style.display = r.innerText.toLowerCase().includes(search) ? "" : "none";});
 }
 
 async function viewClient(uuid){
@@ -762,7 +790,6 @@ async function viewClient(uuid){
 
     document.getElementById("clientListPage").style.display="none";
     document.getElementById("clientDetailPage").style.display="block";
-    document.getElementById("historySection").style.display="none";
 
     document.getElementById("clientInfo").innerHTML = `
         <b>UUID:</b> ${data.uuid}<br>
@@ -775,13 +802,11 @@ async function viewClient(uuid){
     // Hardware
     let hwHTML = "";
     const hw = data.hardware || {};
-    for(let key in hw){
-        if(key !== "Disks") hwHTML += `<b>${key}:</b> ${hw[key]}<br>`;
-    }
+    for(let key in hw){if(key!=="Disks") hwHTML += `<b>${key}:</b> ${hw[key]}<br>`;}
     if(hw.Disks){
         hwHTML += "<br><b>Disks:</b><br>";
         hw.Disks.forEach(d=>{
-            hwHTML += `${d.Device || d.Mountpoint} (Total: ${d["Total (GB)"]} GB, Used: ${d["Used (GB)"]} GB, Free: ${d["Free (GB)"]} GB)<br>`;
+            hwHTML += `${d.Device||d.Mountpoint} (Total: ${d["Total (GB)"]} GB, Used: ${d["Used (GB)"]} GB, Free: ${d["Free (GB)"]} GB)<br>`;
         });
     }
     document.getElementById("hardwareSection").innerHTML = hwHTML;
@@ -818,18 +843,13 @@ function goBack(){
 }
 
 function deleteClient(uuid){
-    if(confirm("Delete this client?")){
-        fetch("/api/client/"+uuid,{method:"DELETE"})
-        .then(()=>loadClients());
-    }
+    if(confirm("Delete this client?")) fetch("/api/client/"+uuid,{method:"DELETE"}).then(()=>loadClients());
 }
 
-function downloadPDF(){
-    window.location="/api/client/"+currentUUID+"/pdf";
-}
+function downloadPDF(){window.location="/api/client/"+currentUUID+"/pdf";}
 
-// ================= APP HISTORY =================
-async function viewHistory(){
+// ================= MODAL FUNCTIONS =================
+async function openHistoryModal(){
     const res = await fetch(`/api/client/${currentUUID}/history`);
     const data = await res.json();
     let html = "";
@@ -847,17 +867,14 @@ async function viewHistory(){
         });
         html += "</table><hr>";
     });
-    const section = document.getElementById("historySection");
     document.getElementById("historyContent").innerHTML = html;
-    section.style.display="block";
+    document.getElementById("historyModal").style.display="flex";
 }
 
+function closeHistoryModal(){document.getElementById("historyModal").style.display="none";}
+
 // Auto-refresh every 10 sec
-setInterval(()=>{
-    if(document.getElementById("clientListPage").style.display!=="none"){
-        loadClients();
-    }
-},10000);
+setInterval(()=>{if(document.getElementById("clientListPage").style.display!=="none") loadClients();},10000);
 
 loadClients();
 </script>
