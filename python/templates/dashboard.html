@@ -568,226 +568,219 @@
 
 
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Enterprise Client Monitoring</title>
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-<style>
-body { background:#f4f6f9; color:#1f2937; }
-.card { border-radius:14px; border:none; margin-bottom:15px; }
-.stat-card { padding:20px; text-align:center; font-weight:600; }
-.stat-number { font-size:28px; }
-.status-online { color:#22c55e; font-weight:bold; }
-.status-offline { color:#ef4444; font-weight:bold; }
-.navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
-</style>
+    <title>Client Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f4f6f9;
+            margin: 0;
+            padding: 20px;
+            transition: background 0.3s, color 0.3s;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+        }
+
+        .top-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .btn {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .btn-dark {
+            background: #222;
+            color: white;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            margin-top: 25px;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            transition: background 0.3s;
+        }
+
+        .card h2 {
+            margin-bottom: 20px;
+            border-left: 4px solid #007bff;
+            padding-left: 10px;
+        }
+
+        .hardware-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px,1fr));
+            gap: 15px;
+        }
+
+        .info-box {
+            background: #f8f9fa;
+            padding: 12px;
+            border-radius: 8px;
+            transition: background 0.3s;
+        }
+
+        .info-box small {
+            color: #666;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th {
+            background: #007bff;
+            color: white;
+            padding: 10px;
+            text-align: left;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        tr:hover {
+            background: #f1f1f1;
+        }
+
+        /* ------------------ DARK MODE ------------------ */
+
+        body.dark {
+            background: #121212;
+            color: #e0e0e0;
+        }
+
+        body.dark .card {
+            background: #1e1e1e;
+        }
+
+        body.dark .info-box {
+            background: #2a2a2a;
+        }
+
+        body.dark th {
+            background: #333;
+        }
+
+        body.dark tr:hover {
+            background: #2a2a2a;
+        }
+
+    </style>
 </head>
 <body>
 
-<div class="navbar-custom bg-light">
-    <h4 id="pageTitle">Enterprise Client Monitoring</h4>
-    <div>
-        <button id="backBtn" class="btn btn-secondary d-none" onclick="goBack()">Back</button>
-        <button id="refreshBtn" class="btn btn-primary" onclick="loadClients()">Refresh</button>
-        <button id="deleteBtn" class="btn btn-danger d-none" onclick="deleteClient()">Delete</button>
-        <button id="pdfBtn" class="btn btn-success d-none" onclick="downloadPDF()">Download PDF</button>
+<div class="top-bar">
+    <h1>🖥 Client Dashboard</h1>
+    <button class="btn btn-dark" onclick="toggleDarkMode()">🌙 Toggle Dark Mode</button>
+</div>
+
+{% if client %}
+
+<!-- ================= HARDWARE INFO ================= -->
+<div class="card">
+    <h2>Hardware Information</h2>
+
+    <div class="hardware-grid">
+        <div class="info-box">
+            <small>Hostname</small>
+            <strong>{{ client.hostname }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>User</small>
+            <strong>{{ client.user }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>Operating System</small>
+            <strong>{{ client.os }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>Platform</small>
+            <strong>{{ client.platform }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>IP Address</small>
+            <strong>{{ client.ip_address }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>CPU</small>
+            <strong>{{ client.cpu }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>Physical Cores</small>
+            <strong>{{ client.cpu_cores }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>Logical CPUs</small>
+            <strong>{{ client.logical_cpus }}</strong>
+        </div>
+
+        <div class="info-box">
+            <small>RAM</small>
+            <strong>{{ client.ram_gb }} GB</strong>
+        </div>
     </div>
 </div>
 
-<div class="container mt-4" id="mainContainer">
-    <!-- CONTENT RENDERS HERE -->
+<!-- ================= DISK INFO ================= -->
+<div class="card">
+    <h2>Disk Usage</h2>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Drive</th>
+                <th>Total (GB)</th>
+                <th>Used (GB)</th>
+                <th>Free (GB)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for disk in client.disks %}
+            <tr>
+                <td>{{ disk.Device }}</td>
+                <td>{{ disk["Total (GB)"] }}</td>
+                <td>{{ disk["Used (GB)"] }}</td>
+                <td>{{ disk["Free (GB)"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+{% else %}
+    <p>No client selected.</p>
+{% endif %}
+
 <script>
-
-const API_BASE = "/api";
-let currentUUID = null;
-
-function goBack(){
-    window.location.href = "/";
+function toggleDarkMode() {
+    document.body.classList.toggle("dark");
 }
-
-function checkRoute(){
-    const path = window.location.pathname;
-
-    if(path.startsWith("/client/")){
-        currentUUID = path.split("/client/")[1];
-        showClientView();
-    } else {
-        showDashboardView();
-    }
-}
-
-function showDashboardView(){
-    document.getElementById("pageTitle").innerText = "Enterprise Client Monitoring";
-    document.getElementById("backBtn").classList.add("d-none");
-    document.getElementById("deleteBtn").classList.add("d-none");
-    document.getElementById("pdfBtn").classList.add("d-none");
-    document.getElementById("refreshBtn").classList.remove("d-none");
-
-    document.getElementById("mainContainer").innerHTML = `
-        <div class="row mb-4">
-            <div class="col-md-4"><div class="card stat-card shadow-sm">Total Clients<div class="stat-number" id="totalCount">0</div></div></div>
-            <div class="col-md-4"><div class="card stat-card shadow-sm">Online<div class="stat-number" id="onlineCount">0</div></div></div>
-            <div class="col-md-4"><div class="card stat-card shadow-sm">Offline<div class="stat-number" id="offlineCount">0</div></div></div>
-        </div>
-
-        <div class="card p-4 mb-4 shadow-sm">
-            <input type="text" id="searchInput" class="form-control" placeholder="Search..." onkeyup="loadClients()">
-        </div>
-
-        <div class="card p-4 shadow-sm">
-            <div class="table-responsive">
-                <table class="table table-hover align-middle">
-                    <thead class="table-secondary">
-                        <tr>
-                            <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th>
-                            <th>Last Seen</th><th>Status</th><th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="clientsTableBody">
-                        <tr><td colspan="7" class="text-center">Loading...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-    `;
-
-    loadClients();
-}
-
-async function loadClients(){
-    const search = document.getElementById("searchInput")?.value || "";
-    const tbody = document.getElementById("clientsTableBody");
-
-    if(!tbody) return;
-
-    tbody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
-
-    try{
-        const resp = await fetch(`${API_BASE}/clients?search=${encodeURIComponent(search)}`);
-        const clients = await resp.json();
-
-        tbody.innerHTML="";
-        let total=clients.length, online=0, offline=0;
-
-        if(total===0){
-            tbody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
-        }
-
-        clients.forEach(c=>{
-            if(c.status==="Online") online++; else offline++;
-            const cls=c.status==="Online"?"status-online":"status-offline";
-
-            tbody.innerHTML+=`
-                <tr>
-                    <td>${c.uuid}</td>
-                    <td>${c.hostname}</td>
-                    <td>${c.ip}</td>
-                    <td>${c.mac}</td>
-                    <td>${c.last_seen}</td>
-                    <td class="${cls}">${c.status}</td>
-                    <td>
-                        <a href="/client/${c.uuid}" class="btn btn-sm btn-info">View</a>
-                    </td>
-                </tr>
-            `;
-        });
-
-        document.getElementById("totalCount").innerText=total;
-        document.getElementById("onlineCount").innerText=online;
-        document.getElementById("offlineCount").innerText=offline;
-
-    }catch(e){
-        tbody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Error loading clients</td></tr>`;
-    }
-}
-
-function showClientView(){
-    document.getElementById("pageTitle").innerText = "Client Details";
-    document.getElementById("backBtn").classList.remove("d-none");
-    document.getElementById("deleteBtn").classList.remove("d-none");
-    document.getElementById("pdfBtn").classList.remove("d-none");
-    document.getElementById("refreshBtn").classList.add("d-none");
-
-    document.getElementById("mainContainer").innerHTML = `
-        <div class="card p-4 shadow-sm">
-            <div id="clientDetails">Loading...</div>
-        </div>
-    `;
-
-    loadClient();
-}
-
-async function loadClient(){
-    const detailsDiv = document.getElementById("clientDetails");
-
-    try{
-        const resp = await fetch(`${API_BASE}/client/${currentUUID}`);
-        const data = await resp.json();
-
-        if(data.error){
-            detailsDiv.innerHTML="Client not found.";
-            return;
-        }
-
-        let hwHTML="<h5>Hardware Info</h5><ul>";
-        for(let k in data.hardware){
-            hwHTML+=`<li><strong>${k}:</strong> ${JSON.stringify(data.hardware[k])}</li>`;
-        }
-        hwHTML+="</ul>";
-
-        let appsHTML="<h5 class='mt-4'>Installed Apps</h5><table class='table table-bordered table-sm'><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th></tr>";
-        data.apps.forEach(a=>{
-            appsHTML+=`<tr>
-                <td>${a.name||""}</td>
-                <td>${a.version||""}</td>
-                <td>${a.install_date||""}</td>
-                <td>${a.size_bytes||""}</td>
-            </tr>`;
-        });
-        appsHTML+="</table>";
-
-        detailsDiv.innerHTML=`
-            <p><strong>UUID:</strong> ${data.uuid}</p>
-            <p><strong>Hostname:</strong> ${data.hostname}</p>
-            <p><strong>MAC:</strong> ${data.mac}</p>
-            <p><strong>IP:</strong> ${data.ip}</p>
-            <p><strong>Last Seen:</strong> ${data.last_seen}</p>
-            ${hwHTML}
-            ${appsHTML}
-        `;
-
-    }catch(e){
-        detailsDiv.innerHTML="Error loading client data.";
-    }
-}
-
-function downloadPDF(){
-    window.open(`/api/client/${currentUUID}/pdf`, "_blank");
-}
-
-async function deleteClient(){
-    if(!confirm("Delete this client permanently?")) return;
-
-    const resp = await fetch(`${API_BASE}/client/${currentUUID}`, {
-        method: "DELETE"
-    });
-
-    const result = await resp.json();
-
-    if(result.status==="deleted"){
-        alert("Client deleted.");
-        window.location.href="/";
-    } else {
-        alert("Delete failed.");
-    }
-}
-
-checkRoute();
 </script>
+
 </body>
 </html>
