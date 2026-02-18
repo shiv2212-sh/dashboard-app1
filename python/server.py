@@ -2172,7 +2172,6 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 import tempfile
-from urllib.parse import unquote
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -2197,15 +2196,16 @@ def init_db():
             apps JSONB
         )
     """)
+    # Table for per-app history
     cur.execute("""
         CREATE TABLE IF NOT EXISTS app_history (
             id SERIAL PRIMARY KEY,
             client_uuid TEXT,
+            timestamp TIMESTAMP,
             app_name TEXT,
             version TEXT,
             install_date TEXT,
-            size_bytes BIGINT,
-            timestamp TIMESTAMP
+            size_bytes BIGINT
         )
     """)
     con.commit()
@@ -2216,7 +2216,7 @@ if DATABASE_URL:
 
 # ================= HELPERS =================
 
-OFFLINE_SECONDS = 30  # 🔥 30 seconds timeout
+OFFLINE_SECONDS = 30  # 30 seconds timeout
 
 def status_from_last_seen(ts):
     if not ts:
@@ -2238,23 +2238,19 @@ def safe_json(v):
 def dashboard():
     return render_template("dashboard.html")
 
-@app.route("/client/<uuid>")
-def client_page(uuid):
-    return render_template("dashboard.html")
 
 # ================= API =================
 
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
-
     hardware = json.dumps(data.get("hardware", {}))
     apps = data.get("apps", [])
 
     con = get_db()
     cur = con.cursor()
 
-    # Save client info
+    # Insert/Update client info
     cur.execute("""
         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
@@ -2269,24 +2265,24 @@ def api_report():
         data.get("uuid"),
         data.get("mac"),
         data.get("hostname"),
-        datetime.datetime.now(),  # SERVER TIME
+        datetime.datetime.now(),
         data.get("hardware", {}).get("IP Address"),
         hardware,
         json.dumps(apps)
     ))
 
-    # Save app history
+    # Insert per-app history
     for app_item in apps:
         cur.execute("""
-            INSERT INTO app_history (client_uuid, app_name, version, install_date, size_bytes, timestamp)
+            INSERT INTO app_history (client_uuid, timestamp, app_name, version, install_date, size_bytes)
             VALUES (%s,%s,%s,%s,%s,%s)
         """, (
             data.get("uuid"),
+            datetime.datetime.now(),
             app_item.get("name"),
             app_item.get("version"),
             app_item.get("install_date"),
-            app_item.get("size_bytes", 0),
-            datetime.datetime.now()
+            int(app_item.get("size_bytes") or 0)
         ))
 
     con.commit()
@@ -2313,7 +2309,6 @@ def api_clients():
             "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
             "status": status_from_last_seen(r[4])
         })
-
     return jsonify(result)
 
 
@@ -2322,8 +2317,7 @@ def api_client(uuid):
     con = get_db()
     cur = con.cursor()
     cur.execute("""
-        SELECT client_uuid, hostname, ip, mac_address,
-               last_seen, hardware, apps
+        SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
         FROM clients WHERE client_uuid=%s
     """, (uuid,))
     r = cur.fetchone()
@@ -2342,16 +2336,6 @@ def api_client(uuid):
         "hardware": safe_json(r[5]),
         "apps": safe_json(r[6])
     })
-
-
-@app.route("/api/client/<uuid>", methods=["DELETE"])
-def delete_client(uuid):
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
-    con.commit()
-    con.close()
-    return jsonify({"status": "deleted"})
 
 
 @app.route("/api/client/<uuid>/pdf")
@@ -2384,7 +2368,7 @@ def download_pdf(uuid):
     elements.append(Paragraph(f"<b>MAC:</b> {r[2]}", styles["Normal"]))
     elements.append(Spacer(1, 20))
 
-    # Hardware Table
+    # Hardware table
     hw_data = [["Key", "Value"]]
     for k, v in hardware.items():
         if k != "Disks":
@@ -2398,7 +2382,7 @@ def download_pdf(uuid):
     elements.append(hw_table)
     elements.append(Spacer(1, 20))
 
-    # Disks Table
+    # Disks
     disks = hardware.get("Disks", [])
     if disks:
         disk_data = [["Drive", "Total (GB)", "Used (GB)", "Free (GB)"]]
@@ -2418,14 +2402,10 @@ def download_pdf(uuid):
         elements.append(disk_table)
         elements.append(Spacer(1, 20))
 
-    # Apps Table
+    # Apps table
     apps_data = [["Name", "Version", "Install Date", "Size (MB)"]]
     for a in apps:
-        try:
-            size_bytes = int(a.get("size_bytes", 0))
-        except:
-            size_bytes = 0
-        size_mb = round(size_bytes / (1024*1024), 2)
+        size_mb = round(int(a.get("size_bytes") or 0) / (1024*1024), 2)
         apps_data.append([
             a.get("name",""),
             a.get("version",""),
@@ -2439,25 +2419,21 @@ def download_pdf(uuid):
         ('GRID',(0,0),(-1,-1),0.5,colors.grey),
     ]))
     elements.append(apps_table)
-
     doc.build(elements)
 
-    return Response(open(temp.name,"rb"),
-                    mimetype="application/pdf",
+    return Response(open(temp.name,"rb"), mimetype="application/pdf",
                     headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
 
-
-# ================= APP HISTORY =================
 
 @app.route("/api/client/<uuid>/history")
 def get_app_history(uuid):
     app_name = request.args.get("app")
-    if not app_name:
-        return jsonify({"error": "Missing app parameter"}), 400
-    app_name = unquote(app_name)  # decode URL-encoded app name
-
     con = get_db()
     cur = con.cursor()
+
+    if not app_name:
+        return jsonify({"error": "app query parameter required"}), 400
+
     cur.execute("""
         SELECT timestamp, version, install_date, size_bytes
         FROM app_history
@@ -2469,14 +2445,19 @@ def get_app_history(uuid):
 
     history = []
     for r in rows:
+        ts = r[0]
+        if isinstance(ts, str):
+            ts_formatted = ts
+        else:
+            ts_formatted = ts.strftime("%Y-%m-%d %H:%M:%S")
         history.append({
-            "timestamp": r[0].strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": ts_formatted,
             "version": r[1],
             "install_date": r[2],
             "size_bytes": r[3]
         })
-    return jsonify(history)
 
+    return jsonify(history)
 
 # ================= RUN =================
 
