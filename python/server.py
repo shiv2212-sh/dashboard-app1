@@ -2162,133 +2162,228 @@
 
 
 
-from flask import Flask, jsonify, request, send_file, render_template
+# server.py
+from flask import Flask, jsonify, request, render_template, send_file
 from fpdf import FPDF
+import sqlite3
+import os
+import io
+import csv
 from datetime import datetime
-import io, csv
 
 app = Flask(__name__, template_folder="templates")
 
-# -----------------------
-# Sample in-memory database
-# -----------------------
-clients_db = [
-    {
-        "uuid": "2b39f34a-5b26-4352-9ac0-37c9ef5cf726",
-        "hostname": "Client-PC-01",
-        "ip": "10.0.5.34",
-        "mac": "AA:BB:CC:DD:EE:01",
-        "last_seen": "2026-02-18 11:00:00",
-        "status": "Online",
-        "hardware": {"CPU":"Intel i7","RAM":"16GB"},
-        "apps":[
-            {"name":"Python 3.11.4","version":"64-bit","install_date":"2025-10-01","size_bytes":5120000,
-             "history":[
-                 {"timestamp":"2026-02-18 09:00:00","action":"Installed"},
-                 {"timestamp":"2026-02-18 10:00:00","action":"Updated"}
-             ]},
-            {"name":"PyCharm","version":"2025.3.1","install_date":"2025-12-15","size_bytes":20480000,
-             "history":[
-                 {"timestamp":"2026-02-17 12:00:00","action":"Installed"}
-             ]}
-        ]
-    }
-]
+DB_FILE = "clients.db"
 
-# -----------------------
-# Routes
-# -----------------------
+# ----------------------------
+# DATABASE SETUP
+# ----------------------------
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            uuid TEXT PRIMARY KEY,
+            hostname TEXT,
+            ip TEXT,
+            mac TEXT,
+            last_seen TEXT,
+            status TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS apps (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_uuid TEXT,
+            name TEXT,
+            version TEXT,
+            install_date TEXT,
+            size_bytes INTEGER,
+            FOREIGN KEY(client_uuid) REFERENCES clients(uuid)
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS app_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_uuid TEXT,
+            app_name TEXT,
+            timestamp TEXT,
+            details TEXT,
+            FOREIGN KEY(client_uuid) REFERENCES clients(uuid)
+        )
+    """)
+    conn.commit()
+    conn.close()
 
+def get_db():
+    return sqlite3.connect(DB_FILE)
+
+# ----------------------------
+# DASHBOARD ROUTE
+# ----------------------------
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
+# ----------------------------
+# API ROUTES
+# ----------------------------
 @app.route("/api/clients")
 def get_clients():
-    search = request.args.get("search","").lower()
-    filtered = []
-    for c in clients_db:
-        if search in c["uuid"].lower() or search in c["hostname"].lower() or search in c["ip"]:
-            filtered.append(c)
-    return jsonify(filtered)
+    search = request.args.get("search", "").lower()
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM clients")
+    clients = []
+    for row in c.fetchall():
+        client = {
+            "uuid": row[0],
+            "hostname": row[1],
+            "ip": row[2],
+            "mac": row[3],
+            "last_seen": row[4],
+            "status": row[5]
+        }
+        if search in client["hostname"].lower() or search in client["uuid"].lower():
+            clients.append(client)
+    conn.close()
+    return jsonify(clients)
 
 @app.route("/api/client/<uuid>")
 def get_client(uuid):
-    for c in clients_db:
-        if c["uuid"]==uuid:
-            return jsonify(c)
-    return jsonify({"error":"Client not found"}),404
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM clients WHERE uuid=?", (uuid,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify({"error": "Client not found"}), 404
 
+    client_data = {
+        "uuid": row[0],
+        "hostname": row[1],
+        "ip": row[2],
+        "mac": row[3],
+        "last_seen": row[4],
+        "status": row[5],
+        "hardware": {"CPU": "Intel i7", "RAM": "16GB"},  # placeholder
+        "apps": []
+    }
+
+    c.execute("SELECT name, version, install_date, size_bytes FROM apps WHERE client_uuid=?", (uuid,))
+    for a in c.fetchall():
+        client_data["apps"].append({
+            "name": a[0],
+            "version": a[1],
+            "install_date": a[2],
+            "size_bytes": a[3]
+        })
+
+    conn.close()
+    return jsonify(client_data)
+
+# ----------------------------
+# APP HISTORY ROUTE
+# ----------------------------
 @app.route("/api/client/<uuid>/history")
 def get_app_history(uuid):
     app_name = request.args.get("app")
-    for c in clients_db:
-        if c["uuid"]==uuid:
-            for a in c["apps"]:
-                if a["name"]==app_name:
-                    return jsonify(a.get("history",[]))
-            return jsonify({"error":"App not found"}),404
-    return jsonify({"error":"Client not found"}),404
+    if not app_name:
+        return jsonify({"error": "App parameter missing"}), 400
 
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT timestamp, details FROM app_history WHERE client_uuid=? AND app_name=? ORDER BY timestamp DESC",
+              (uuid, app_name))
+    history = [{"timestamp": r[0], "details": r[1]} for r in c.fetchall()]
+    conn.close()
+    return jsonify(history)
+
+# ----------------------------
+# CSV EXPORT
+# ----------------------------
+@app.route("/api/client/<uuid>/csv")
+def get_client_csv(uuid):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT name, version, install_date, size_bytes FROM apps WHERE client_uuid=?", (uuid,))
+    apps = c.fetchall()
+    conn.close()
+
+    if not apps:
+        return "No apps found for this client", 404
+
+    mem_file = io.StringIO()
+    writer = csv.writer(mem_file)
+    writer.writerow(["Name", "Version", "Install Date", "Size (Bytes)"])
+    writer.writerows(apps)
+    mem_file.seek(0)
+
+    return send_file(io.BytesIO(mem_file.getvalue().encode("utf-8")),
+                     mimetype="text/csv",
+                     download_name=f"{uuid}_apps.csv")
+
+# ----------------------------
+# PDF EXPORT
+# ----------------------------
 @app.route("/api/client/<uuid>/pdf")
-def download_pdf(uuid):
-    client = next((c for c in clients_db if c["uuid"]==uuid), None)
-    if not client:
-        return "Client not found",404
+def get_client_pdf(uuid):
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT * FROM clients WHERE uuid=?", (uuid,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return "Client not found", 404
 
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", "B", 16)
-    pdf.cell(0,10,f"Client Report: {client['hostname']}",ln=True)
+    pdf.cell(0, 10, f"Client Report: {row[1]}", ln=True)
     pdf.set_font("Arial", "", 12)
     pdf.ln(5)
-    pdf.cell(0,10,f"UUID: {client['uuid']}",ln=True)
-    pdf.cell(0,10,f"IP: {client['ip']}",ln=True)
-    pdf.cell(0,10,f"MAC: {client['mac']}",ln=True)
-    pdf.cell(0,10,f"Last Seen: {client['last_seen']}",ln=True)
-    pdf.ln(5)
-    pdf.cell(0,10,"Hardware Info:",ln=True)
-    for k,v in client["hardware"].items():
-        pdf.cell(0,10,f"  {k}: {v}",ln=True)
-    pdf.ln(5)
-    pdf.cell(0,10,"Installed Apps:",ln=True)
-    for a in client["apps"]:
-        pdf.cell(0,10,f"  {a['name']} ({a['version']}) - Installed: {a['install_date']} Size: {a['size_bytes']} bytes",ln=True)
+    pdf.cell(0, 8, f"UUID: {row[0]}", ln=True)
+    pdf.cell(0, 8, f"Hostname: {row[1]}", ln=True)
+    pdf.cell(0, 8, f"IP: {row[2]}", ln=True)
+    pdf.cell(0, 8, f"MAC: {row[3]}", ln=True)
+    pdf.cell(0, 8, f"Last Seen: {row[4]}", ln=True)
+    pdf.cell(0, 8, f"Status: {row[5]}", ln=True)
 
-    buf = io.BytesIO()
-    pdf.output(buf)
-    buf.seek(0)
-    return send_file(buf, as_attachment=True, download_name=f"{client['hostname']}.pdf", mimetype="application/pdf")
+    c.execute("SELECT name, version, install_date, size_bytes FROM apps WHERE client_uuid=?", (uuid,))
+    apps = c.fetchall()
+    if apps:
+        pdf.ln(10)
+        pdf.set_font("Arial", "B", 14)
+        pdf.cell(0, 10, "Installed Apps", ln=True)
+        pdf.set_font("Arial", "", 12)
+        for a in apps:
+            pdf.cell(0, 8, f"{a[0]} | Version: {a[1]} | Installed: {a[2]} | Size: {a[3]} bytes", ln=True)
 
-@app.route("/api/client/<uuid>/csv")
-def download_csv(uuid):
-    client = next((c for c in clients_db if c["uuid"]==uuid), None)
-    if not client:
-        return "Client not found",404
+    conn.close()
+    mem_file = io.BytesIO()
+    pdf.output(mem_file)
+    mem_file.seek(0)
+    return send_file(mem_file, mimetype="application/pdf", download_name=f"{row[1]}_report.pdf")
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["App Name","Version","Install Date","Size Bytes"])
-    for a in client["apps"]:
-        writer.writerow([a["name"],a["version"],a["install_date"],a["size_bytes"]])
-    output.seek(0)
-    return send_file(io.BytesIO(output.getvalue().encode()),
-                     as_attachment=True,
-                     download_name=f"{client['hostname']}.csv",
-                     mimetype="text/csv")
-
+# ----------------------------
+# DELETE CLIENT
+# ----------------------------
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
-    global clients_db
-    for i,c in enumerate(clients_db):
-        if c["uuid"]==uuid:
-            clients_db.pop(i)
-            return jsonify({"status":"deleted"})
-    return jsonify({"status":"not found"}),404
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("DELETE FROM clients WHERE uuid=?", (uuid,))
+    c.execute("DELETE FROM apps WHERE client_uuid=?", (uuid,))
+    c.execute("DELETE FROM app_history WHERE client_uuid=?", (uuid,))
+    conn.commit()
+    conn.close()
+    return jsonify({"status": "deleted"})
 
-# -----------------------
-# Run server
-# -----------------------
-if __name__=="__main__":
-    app.run(host="0.0.0.0", port=10000, debug=True)
+# ----------------------------
+# RUN SERVER
+# ----------------------------
+if __name__ == "__main__":
+    init_db()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)), debug=True)
+
 
