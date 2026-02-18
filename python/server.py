@@ -1910,7 +1910,7 @@ from reportlab.lib.pagesizes import A4
 
 # ---------------- CONFIG ----------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
-OFFLINE_SECONDS = 30  # 30 seconds timeout
+OFFLINE_SECONDS = 30  # seconds to mark client offline
 
 app = Flask(__name__, template_folder="templates")
 
@@ -1942,7 +1942,7 @@ if DATABASE_URL:
 def status_from_last_seen(ts):
     if not ts:
         return "Offline"
-    diff = (datetime.datetime.utcnow() - ts).total_seconds()
+    diff = (datetime.datetime.now() - ts).total_seconds()
     return "Online" if diff <= OFFLINE_SECONDS else "Offline"
 
 def safe_json(v):
@@ -1969,6 +1969,9 @@ def api_report():
     hardware = json.dumps(data.get("hardware", {}))
     apps = json.dumps(data.get("apps", []))
 
+    # Use server local time instead of UTC
+    last_seen = datetime.datetime.now()
+
     con = get_db()
     cur = con.cursor()
     cur.execute("""
@@ -1985,7 +1988,7 @@ def api_report():
         data.get("uuid"),
         data.get("mac"),
         data.get("hostname"),
-        datetime.datetime.utcnow(),
+        last_seen,                     # Local server time
         data.get("hardware", {}).get("IP Address"),
         hardware,
         apps
@@ -2004,12 +2007,13 @@ def api_clients():
 
     result = []
     for r in rows:
+        last_seen_str = r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown"
         result.append({
             "uuid": r[0],
             "hostname": r[1],
             "ip": r[2],
             "mac": r[3],
-            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+            "last_seen": last_seen_str,
             "status": status_from_last_seen(r[4])
         })
     return jsonify(result)
@@ -2029,12 +2033,14 @@ def api_client(uuid):
     if not r:
         return jsonify({"error": "Client not found"}), 404
 
+    last_seen_str = r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown"
+
     return jsonify({
         "uuid": r[0],
         "hostname": r[1],
         "ip": r[2],
         "mac": r[3],
-        "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+        "last_seen": last_seen_str,
         "status": status_from_last_seen(r[4]),
         "hardware": safe_json(r[5]),
         "apps": safe_json(r[6])
@@ -2067,7 +2073,6 @@ def download_pdf(uuid):
     hardware = safe_json(r[3])
     apps = safe_json(r[4])
 
-    # Use in-memory buffer
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
@@ -2117,7 +2122,11 @@ def download_pdf(uuid):
     # Apps Table
     apps_data = [["Name", "Version", "Install Date", "Size (MB)"]]
     for a in apps:
-        size_mb = round(a.get("size_bytes", 0) / (1024*1024), 2)
+        try:
+            size_bytes = int(a.get("size_bytes", 0))
+        except (ValueError, TypeError):
+            size_bytes = 0
+        size_mb = round(size_bytes / (1024*1024), 2)
         apps_data.append([
             a.get("name",""),
             a.get("version",""),
@@ -2134,7 +2143,6 @@ def download_pdf(uuid):
 
     doc.build(elements)
     buffer.seek(0)
-
     return send_file(buffer, as_attachment=True, download_name=f"{uuid}.pdf", mimetype="application/pdf")
 
 # ---------------- RUN ----------------
