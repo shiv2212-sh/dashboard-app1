@@ -571,257 +571,223 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Client Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Enterprise Client Monitoring</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
-/* ================= GENERAL STYLING ================= */
-body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: #f5f6fa;
-    color: #2f3640;
-    margin: 0;
-    padding: 0;
-}
-header {
-    background: #2f3640;
-    color: white;
-    padding: 15px 30px;
-    font-size: 1.8em;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-header .controls {
-    display: flex;
-    align-items: center;
-}
-header .controls input {
-    padding: 6px 10px;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-    margin-right: 10px;
-}
-header .controls button {
-    background: #00a8ff;
-    color: white;
-    border: none;
-    border-radius: 5px;
-    padding: 6px 12px;
-    cursor: pointer;
-    margin-left: 5px;
-    transition: background 0.3s;
-}
-header .controls button:hover {
-    background: #0097e6;
-}
-.container { padding: 20px; }
-
-/* ================= TABLE ================= */
-table {
-    width: 100%;
-    border-collapse: collapse;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.1);
-    border-radius: 8px;
-    overflow: hidden;
-    background:white;
-}
-th, td {
-    padding: 12px 15px;
-    text-align: left;
-}
-th {
-    background: #273c75;
-    color: white;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-}
-tr:nth-child(even) { background: #f1f2f6; }
-tr:hover { background: #dcdde1; }
-button.view-btn {
-    background: #00a8ff;
-    color:white;
-    border:none;
-    border-radius:5px;
-    padding:5px 10px;
-    cursor:pointer;
-    transition:0.3s;
-}
-button.view-btn:hover { background:#0097e6; }
-
-/* ================= DARK MODE ================= */
-.darkmode {
-    background:#1e272e;
-    color:#f5f6fa;
-}
-.darkmode table { background:#2f3640; box-shadow:none; }
-.darkmode th { background:#353b48; color:#f5f6fa; }
-.darkmode tr:nth-child(even) { background:#3d3d3d; }
-.darkmode tr:hover { background:#4b4b4b; }
-
-/* ================= MODAL ================= */
-.modal {
-    display:none;
-    position:fixed;
-    top:0; left:0;
-    width:100%; height:100%;
-    background: rgba(0,0,0,0.6);
-    justify-content:center;
-    align-items:center;
-    z-index:999;
-}
-.modal-content {
-    background:white;
-    padding:25px;
-    max-width:700px;
-    width:90%;
-    max-height:80%;
-    overflow:auto;
-    border-radius:10px;
-    box-shadow: 0 8px 20px rgba(0,0,0,0.2);
-    position: relative;
-}
-.modal-close {
-    position:absolute;
-    top:10px; right:15px;
-    font-size:1.2em;
-    font-weight:bold;
-    cursor:pointer;
-}
-.darkmode .modal-content { background:#2f3640; color:#f5f6fa; }
-
-/* ================= APP HISTORY TABLE ================= */
-.modal-content table {
-    width:100%;
-    border-collapse: collapse;
-}
-.modal-content th, .modal-content td {
-    padding:8px 10px;
-    border:1px solid #ccc;
-}
-.modal-content th {
-    background:#00a8ff;
-    color:white;
-}
-.darkmode .modal-content th { background:#0097e6; }
-
+body { background:#f4f6f9; color:#1f2937; }
+.card { border-radius:14px; border:none; margin-bottom:15px; }
+.stat-card { padding:20px; text-align:center; font-weight:600; }
+.stat-number { font-size:28px; }
+.status-online { color:#22c55e; font-weight:bold; }
+.status-offline { color:#ef4444; font-weight:bold; }
+.navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
 </style>
 </head>
 <body>
-<header>
-    Client Dashboard
-    <div class="controls">
-        <input type="text" id="search" placeholder="Search clients..." onkeyup="filterTable()">
-        <button onclick="toggleDarkMode()">Dark Mode</button>
-        <button onclick="exportCSV()">Export CSV</button>
-    </div>
-</header>
 
-<div class="container">
-    <table id="clientTable">
-        <thead>
-            <tr>
-                <th>Hostname</th>
-                <th>IP</th>
-                <th>MAC</th>
-                <th>Status</th>
-                <th>Last Seen</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-</div>
-
-<div class="modal" id="modal">
-    <div class="modal-content">
-        <span class="modal-close" onclick="closeModal()">X</span>
-        <div id="modalBody"></div>
+<div class="navbar-custom bg-light">
+    <h4 id="pageTitle">Enterprise Client Monitoring</h4>
+    <div>
+        <button id="backBtn" class="btn btn-secondary d-none" onclick="goBack()">Back</button>
+        <button id="refreshBtn" class="btn btn-primary" onclick="loadClients()">Refresh</button>
+        <button id="deleteBtn" class="btn btn-danger d-none" onclick="deleteClient()">Delete</button>
+        <button id="pdfBtn" class="btn btn-success d-none" onclick="downloadPDF()">Download PDF</button>
     </div>
 </div>
 
+<div class="container mt-4" id="mainContainer">
+    <!-- CONTENT RENDERS HERE -->
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-let dark=false;
 
-function toggleDarkMode(){
-    dark = !dark;
-    document.body.classList.toggle("darkmode", dark);
+const API_BASE = "/api";
+let currentUUID = null;
+
+function goBack(){
+    window.location.href = "/";
+}
+
+function checkRoute(){
+    const path = window.location.pathname;
+
+    if(path.startsWith("/client/")){
+        currentUUID = path.split("/client/")[1];
+        showClientView();
+    } else {
+        showDashboardView();
+    }
+}
+
+function showDashboardView(){
+    document.getElementById("pageTitle").innerText = "Enterprise Client Monitoring";
+    document.getElementById("backBtn").classList.add("d-none");
+    document.getElementById("deleteBtn").classList.add("d-none");
+    document.getElementById("pdfBtn").classList.add("d-none");
+    document.getElementById("refreshBtn").classList.remove("d-none");
+
+    document.getElementById("mainContainer").innerHTML = `
+        <div class="row mb-4">
+            <div class="col-md-4"><div class="card stat-card shadow-sm">Total Clients<div class="stat-number" id="totalCount">0</div></div></div>
+            <div class="col-md-4"><div class="card stat-card shadow-sm">Online<div class="stat-number" id="onlineCount">0</div></div></div>
+            <div class="col-md-4"><div class="card stat-card shadow-sm">Offline<div class="stat-number" id="offlineCount">0</div></div></div>
+        </div>
+
+        <div class="card p-4 mb-4 shadow-sm">
+            <input type="text" id="searchInput" class="form-control" placeholder="Search..." onkeyup="loadClients()">
+        </div>
+
+        <div class="card p-4 shadow-sm">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-secondary">
+                        <tr>
+                            <th>UUID</th><th>Hostname</th><th>IP</th><th>MAC</th>
+                            <th>Last Seen</th><th>Status</th><th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="clientsTableBody">
+                        <tr><td colspan="7" class="text-center">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    `;
+
+    loadClients();
 }
 
 async function loadClients(){
-    let res = await fetch("/api/clients");
-    let data = await res.json();
-    let tbody = document.querySelector("#clientTable tbody");
-    tbody.innerHTML = "";
-    data.forEach(c=>{
-        let tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${c.hostname}</td>
-            <td>${c.ip}</td>
-            <td>${c.mac}</td>
-            <td>${c.status}</td>
-            <td>${c.last_seen}</td>
-            <td><button class="view-btn" onclick="viewClient('${c.uuid}')">View</button></td>
+    const search = document.getElementById("searchInput")?.value || "";
+    const tbody = document.getElementById("clientsTableBody");
+
+    if(!tbody) return;
+
+    tbody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
+
+    try{
+        const resp = await fetch(`${API_BASE}/clients?search=${encodeURIComponent(search)}`);
+        const clients = await resp.json();
+
+        tbody.innerHTML="";
+        let total=clients.length, online=0, offline=0;
+
+        if(total===0){
+            tbody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
+        }
+
+        clients.forEach(c=>{
+            if(c.status==="Online") online++; else offline++;
+            const cls=c.status==="Online"?"status-online":"status-offline";
+
+            tbody.innerHTML+=`
+                <tr>
+                    <td>${c.uuid}</td>
+                    <td>${c.hostname}</td>
+                    <td>${c.ip}</td>
+                    <td>${c.mac}</td>
+                    <td>${c.last_seen}</td>
+                    <td class="${cls}">${c.status}</td>
+                    <td>
+                        <a href="/client/${c.uuid}" class="btn btn-sm btn-info">View</a>
+                    </td>
+                </tr>
+            `;
+        });
+
+        document.getElementById("totalCount").innerText=total;
+        document.getElementById("onlineCount").innerText=online;
+        document.getElementById("offlineCount").innerText=offline;
+
+    }catch(e){
+        tbody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Error loading clients</td></tr>`;
+    }
+}
+
+function showClientView(){
+    document.getElementById("pageTitle").innerText = "Client Details";
+    document.getElementById("backBtn").classList.remove("d-none");
+    document.getElementById("deleteBtn").classList.remove("d-none");
+    document.getElementById("pdfBtn").classList.remove("d-none");
+    document.getElementById("refreshBtn").classList.add("d-none");
+
+    document.getElementById("mainContainer").innerHTML = `
+        <div class="card p-4 shadow-sm">
+            <div id="clientDetails">Loading...</div>
+        </div>
+    `;
+
+    loadClient();
+}
+
+async function loadClient(){
+    const detailsDiv = document.getElementById("clientDetails");
+
+    try{
+        const resp = await fetch(`${API_BASE}/client/${currentUUID}`);
+        const data = await resp.json();
+
+        if(data.error){
+            detailsDiv.innerHTML="Client not found.";
+            return;
+        }
+
+        let hwHTML="<h5>Hardware Info</h5><ul>";
+        for(let k in data.hardware){
+            hwHTML+=`<li><strong>${k}:</strong> ${JSON.stringify(data.hardware[k])}</li>`;
+        }
+        hwHTML+="</ul>";
+
+        let appsHTML="<h5 class='mt-4'>Installed Apps</h5><table class='table table-bordered table-sm'><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th></tr>";
+        data.apps.forEach(a=>{
+            appsHTML+=`<tr>
+                <td>${a.name||""}</td>
+                <td>${a.version||""}</td>
+                <td>${a.install_date||""}</td>
+                <td>${a.size_bytes||""}</td>
+            </tr>`;
+        });
+        appsHTML+="</table>";
+
+        detailsDiv.innerHTML=`
+            <p><strong>UUID:</strong> ${data.uuid}</p>
+            <p><strong>Hostname:</strong> ${data.hostname}</p>
+            <p><strong>MAC:</strong> ${data.mac}</p>
+            <p><strong>IP:</strong> ${data.ip}</p>
+            <p><strong>Last Seen:</strong> ${data.last_seen}</p>
+            ${hwHTML}
+            ${appsHTML}
         `;
-        tbody.appendChild(tr);
+
+    }catch(e){
+        detailsDiv.innerHTML="Error loading client data.";
+    }
+}
+
+function downloadPDF(){
+    window.open(`/api/client/${currentUUID}/pdf`, "_blank");
+}
+
+async function deleteClient(){
+    if(!confirm("Delete this client permanently?")) return;
+
+    const resp = await fetch(`${API_BASE}/client/${currentUUID}`, {
+        method: "DELETE"
     });
+
+    const result = await resp.json();
+
+    if(result.status==="deleted"){
+        alert("Client deleted.");
+        window.location.href="/";
+    } else {
+        alert("Delete failed.");
+    }
 }
 
-async function viewClient(uuid){
-    let res = await fetch(`/api/client/${uuid}`);
-    let c = await res.json();
-    let html = `<h2>${c.hostname} Details</h2>
-    <p><b>IP:</b> ${c.ip} <b>MAC:</b> ${c.mac} <b>Status:</b> ${c.status}</p>
-    <h3>Apps</h3>
-    <table>
-    <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size(MB)</th><th>History</th></tr>
-    ${c.apps.map(a=>`<tr>
-        <td>${a.name}</td>
-        <td>${a.version}</td>
-        <td>${a.install_date}</td>
-        <td>${(a.size_bytes/1024/1024).toFixed(2)}</td>
-        <td><button onclick="showHistory('${uuid}','${encodeURIComponent(a.name)}')">History</button></td>
-    </tr>`).join("")}
-    </table>`;
-    document.getElementById("modalBody").innerHTML = html;
-    document.getElementById("modal").style.display = "flex";
-}
-
-function closeModal(){ document.getElementById("modal").style.display="none"; }
-
-async function showHistory(uuid, app){
-    let res = await fetch(`/api/client/${uuid}/history?app=${app}`);
-    let hist = await res.json();
-    let html = `<h3>History of ${decodeURIComponent(app)}</h3>
-        <table>
-        <tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size(MB)</th></tr>
-        ${hist.map(h=>`<tr>
-            <td>${h.timestamp}</td>
-            <td>${h.version}</td>
-            <td>${h.install_date}</td>
-            <td>${(h.size_bytes/1024/1024).toFixed(2)}</td>
-        </tr>`).join("")}
-        </table>`;
-    document.getElementById("modalBody").innerHTML = html;
-    document.getElementById("modal").style.display = "flex";
-}
-
-function filterTable(){
-    let val = document.getElementById("search").value.toLowerCase();
-    document.querySelectorAll("#clientTable tbody tr").forEach(tr=>{
-        tr.style.display = Array.from(tr.cells).some(td=>td.textContent.toLowerCase().includes(val)) ? "" : "none";
-    });
-}
-
-function exportCSV(){
-    let rows = document.querySelectorAll("#clientTable tr");
-    let csv = Array.from(rows).map(r=>Array.from(r.cells).map(td=>td.innerText).join(",")).join("\n");
-    let a = document.createElement("a");
-    a.href = "data:text/csv;charset=utf-8,"+encodeURIComponent(csv);
-    a.download = "clients.csv";
-    a.click();
-}
-
-window.onload = loadClients;
+checkRoute();
 </script>
 </body>
 </html>
