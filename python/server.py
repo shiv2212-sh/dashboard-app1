@@ -1532,92 +1532,228 @@
 
 
 
-from flask import Flask, render_template, request
-import sqlite3
-import json
 import os
+import json
+import datetime
+import psycopg2
+from flask import Flask, jsonify, render_template, request, Response
+from reportlab.lib.pagesizes import A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+import tempfile
 
-app = Flask(__name__)
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-DATABASE = "clients.db"
+app = Flask(__name__, template_folder="templates")
 
-
-# ---------------- DATABASE ---------------- #
+# ---------------- DATABASE ----------------
 
 def get_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.row_factory = sqlite3.Row
-    return conn
-
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL not set")
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
 
 def init_db():
-    conn = sqlite3.connect(DATABASE)
-    conn.execute("""
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             client_uuid TEXT PRIMARY KEY,
             mac_address TEXT,
             hostname TEXT,
-            last_seen TEXT,
+            last_seen TIMESTAMP,
             ip TEXT,
-            hardware TEXT,
-            apps TEXT,
-            client_ip TEXT
+            hardware JSONB,
+            apps JSONB
         )
     """)
-    conn.commit()
-    conn.close()
+    con.commit()
+    con.close()
 
+if DATABASE_URL:
+    init_db()
 
-# Initialize DB immediately (important for Render)
-init_db()
+# ---------------- HELPERS ----------------
 
+def status_from_last_seen(ts):
+    try:
+        return "Online" if (datetime.datetime.utcnow() - ts).total_seconds() <= 120 else "Offline"
+    except:
+        return "Offline"
 
-# ---------------- DASHBOARD ---------------- #
+def safe_json(v):
+    try:
+        return v if isinstance(v, (dict, list)) else json.loads(v)
+    except:
+        return {}
+
+# ---------------- ROUTES ----------------
 
 @app.route("/")
 def dashboard():
-    view_uuid = request.args.get("view")
+    return render_template("dashboard.html")
 
-    conn = get_db()
+@app.route("/client/<uuid>")
+def client_page(uuid):
+    return render_template("dashboard.html")
 
-    clients = conn.execute(
-        "SELECT * FROM clients ORDER BY last_seen DESC"
-    ).fetchall()
+# ---------------- API ----------------
 
-    selected_client = None
-    hardware = {}
-    apps = []
+@app.route("/api/report", methods=["POST"])
+def api_report():
+    data = request.json
 
-    if view_uuid:
-        selected_client = conn.execute(
-            "SELECT * FROM clients WHERE client_uuid=?",
-            (view_uuid,)
-        ).fetchone()
+    hardware = json.dumps(data.get("hardware", {}))
+    apps = json.dumps(data.get("apps", []))
 
-        if selected_client:
-            try:
-                hardware = json.loads(selected_client["hardware"]) if selected_client["hardware"] else {}
-            except:
-                hardware = {}
+    con = get_db()
+    cur = con.cursor()
 
-            try:
-                apps = json.loads(selected_client["apps"]) if selected_client["apps"] else []
-            except:
-                apps = []
+    cur.execute("""
+        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (client_uuid) DO UPDATE SET
+            mac_address=EXCLUDED.mac_address,
+            hostname=EXCLUDED.hostname,
+            last_seen=EXCLUDED.last_seen,
+            ip=EXCLUDED.ip,
+            hardware=EXCLUDED.hardware,
+            apps=EXCLUDED.apps
+    """, (
+        data.get("uuid"),
+        data.get("mac"),
+        data.get("hostname"),
+        data.get("timestamp"),
+        data.get("hardware", {}).get("IP Address"),
+        hardware,
+        apps
+    ))
 
-    conn.close()
+    con.commit()
+    con.close()
 
-    return render_template(
-        "dashboard.html",
-        clients=clients,
-        selected_client=selected_client,
-        hardware=hardware,
-        apps=apps
-    )
+    return jsonify({"status": "ok"})
 
+@app.route("/api/clients")
+def api_clients():
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients")
+    rows = cur.fetchall()
+    con.close()
 
-# ---------------- START ---------------- #
+    result = []
+    for r in rows:
+        result.append({
+            "uuid": r[0],
+            "hostname": r[1],
+            "ip": r[2],
+            "mac": r[3],
+            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+            "status": status_from_last_seen(r[4])
+        })
+
+    return jsonify(result)
+
+@app.route("/api/client/<uuid>")
+def api_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT client_uuid, hostname, ip, mac_address,
+               last_seen, hardware, apps
+        FROM clients WHERE client_uuid=%s
+    """, (uuid,))
+    r = cur.fetchone()
+    con.close()
+
+    if not r:
+        return jsonify({"error": "Client not found"}), 404
+
+    return jsonify({
+        "uuid": r[0],
+        "hostname": r[1],
+        "ip": r[2],
+        "mac": r[3],
+        "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+        "hardware": safe_json(r[5]),
+        "apps": safe_json(r[6])
+    })
+
+@app.route("/api/client/<uuid>", methods=["DELETE"])
+def delete_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+    con.commit()
+    con.close()
+    return jsonify({"status": "deleted"})
+
+@app.route("/api/client/<uuid>/pdf")
+def download_pdf(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT client_uuid, hostname, ip, mac_address,
+               last_seen, hardware, apps
+        FROM clients WHERE client_uuid=%s
+    """, (uuid,))
+    r = cur.fetchone()
+    con.close()
+
+    if not r:
+        return "Not found", 404
+
+    hardware = safe_json(r[5])
+    apps = safe_json(r[6])
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(temp.name, pagesize=A4)
+    elements = []
+    styles = getSampleStyleSheet()
+
+    elements.append(Paragraph("Client Report", styles["Title"]))
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"Hostname: {r[1]}", styles["Normal"]))
+    elements.append(Paragraph(f"IP: {r[2]}", styles["Normal"]))
+    elements.append(Paragraph(f"MAC: {r[3]}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    hw_data = [["Key", "Value"]]
+    for k, v in hardware.items():
+        hw_data.append([str(k), str(v)])
+
+    hw_table = Table(hw_data)
+    hw_table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.lightgrey),
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey)
+    ]))
+
+    elements.append(hw_table)
+    elements.append(Spacer(1, 12))
+
+    apps_data = [["Name","Version","Install Date","Size"]]
+    for a in apps:
+        apps_data.append([
+            a.get("name",""),
+            a.get("version",""),
+            a.get("install_date",""),
+            str(a.get("size_bytes",""))
+        ])
+
+    apps_table = Table(apps_data, repeatRows=1)
+    apps_table.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.lightgrey),
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey)
+    ]))
+
+    elements.append(apps_table)
+    doc.build(elements)
+
+    return Response(open(temp.name,"rb"),
+                    mimetype="application/pdf",
+                    headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=5000)
