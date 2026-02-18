@@ -570,148 +570,127 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8">
     <title>Client Dashboard</title>
-
+    <meta charset="UTF-8">
     <style>
-        :root {
-            --bg: #f5f6fa;
-            --card: #ffffff;
-            --text: #000000;
-            --primary: #1877f2;
-        }
-
-        body.dark {
-            --bg: #1e1e1e;
-            --card: #2c2c2c;
-            --text: #ffffff;
-            --primary: #3498db;
-        }
-
         body {
             font-family: Arial, sans-serif;
-            background: var(--bg);
-            color: var(--text);
+            background: #0f172a;
+            color: #fff;
             margin: 0;
             padding: 20px;
-            transition: 0.3s;
         }
 
-        .top-bar {
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            margin-bottom:20px;
-        }
-
-        h1 { margin:0; }
-
-        .card {
-            background: var(--card);
-            padding:20px;
-            border-radius:10px;
-            box-shadow:0 2px 10px rgba(0,0,0,0.08);
-            margin-bottom:20px;
+        h1 {
+            margin-bottom: 20px;
         }
 
         table {
-            width:100%;
+            width: 100%;
             border-collapse: collapse;
+            background: #1e293b;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
         }
 
         th {
-            background: var(--primary);
-            color:white;
-            padding:10px;
-            text-align:left;
+            background: #334155;
         }
 
-        td {
-            padding:10px;
-            border-bottom:1px solid #ddd;
+        tr:nth-child(even) {
+            background: #1e293b;
         }
 
-        .btn {
-            padding:6px 12px;
-            border:none;
-            border-radius:6px;
-            cursor:pointer;
-            text-decoration:none;
-            color:white;
-            font-size:14px;
-            margin-left:5px;
+        tr:nth-child(odd) {
+            background: #273449;
         }
 
-        .btn-view { background:#1877f2; }
-        .btn-delete { background:#e74c3c; }
-        .btn-back { background:#555; }
-        .btn-pdf { background:#27ae60; }
-        .btn-toggle { background:#444; }
-        .btn-csv { background:#16a085; }
-
-        .grid {
-            display:grid;
-            grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
-            gap:15px;
+        button {
+            padding: 6px 12px;
+            margin-right: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
         }
 
-        .info-box {
-            background:#f0f0f0;
-            padding:15px;
-            border-radius:8px;
+        .view-btn { background: #3b82f6; color: white; }
+        .pdf-btn { background: #10b981; color: white; }
+        .delete-btn { background: #ef4444; color: white; }
+        .back-btn { background: #64748b; color: white; margin-bottom: 15px; }
+
+        .online { color: #10b981; font-weight: bold; }
+        .offline { color: #ef4444; font-weight: bold; }
+
+        #clientDetail {
+            display: none;
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 8px;
         }
 
-        body.dark .info-box {
-            background:#3a3a3a;
+        .section {
+            margin-bottom: 20px;
         }
 
-        .hidden { display:none; }
+        .card {
+            background: #273449;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
     </style>
 </head>
 <body>
 
-<div class="top-bar">
-    <h1>Client Dashboard</h1>
-    <div>
-        <button class="btn btn-csv" onclick="exportCSV()">Export CSV</button>
-        <button class="btn btn-toggle" onclick="toggleDarkMode()">Toggle Dark Mode</button>
-    </div>
-</div>
+<h1>Client Dashboard</h1>
 
-<!-- ================= LIST VIEW ================= -->
-
-<div id="listView" class="card">
-    <h2>Registered Clients</h2>
+<!-- CLIENT LIST -->
+<div id="clientList">
     <table>
         <thead>
             <tr>
+                <th>UUID</th>
                 <th>Hostname</th>
                 <th>IP</th>
                 <th>MAC</th>
+                <th>Last Seen</th>
                 <th>Status</th>
-                <th>Action</th>
+                <th>Actions</th>
             </tr>
         </thead>
-        <tbody id="clientsTable"></tbody>
+        <tbody id="clientTable"></tbody>
     </table>
 </div>
 
-<!-- ================= DETAIL VIEW ================= -->
+<!-- CLIENT DETAIL -->
+<div id="clientDetail">
+    <button class="back-btn" onclick="goBack()">← Back</button>
 
-<div id="detailView" class="hidden">
+    <h2 id="detailHostname"></h2>
 
-    <div class="card">
-        <button class="btn btn-back" onclick="goHome()">⬅ Back</button>
-        <button id="pdfBtn" class="btn btn-pdf" style="float:right;">Export PDF</button>
-        <h2 id="clientTitle"></h2>
+    <div class="section card">
+        <p><b>UUID:</b> <span id="detailUUID"></span></p>
+        <p><b>IP:</b> <span id="detailIP"></span></p>
+        <p><b>MAC:</b> <span id="detailMAC"></span></p>
+        <p><b>Last Seen:</b> <span id="detailLastSeen"></span></p>
     </div>
 
-    <div class="card">
-        <h3>Hardware Information</h3>
-        <div class="grid" id="hardwareGrid"></div>
+    <div class="section">
+        <h3>Hardware Info</h3>
+        <div id="hardwareInfo"></div>
     </div>
 
-    <div class="card">
+    <div class="section">
+        <h3>Disks</h3>
+        <div id="diskInfo"></div>
+    </div>
+
+    <div class="section">
         <h3>Installed Applications</h3>
         <table>
             <thead>
@@ -719,195 +698,125 @@
                     <th>Name</th>
                     <th>Version</th>
                     <th>Install Date</th>
-                    <th>Size (Bytes)</th>
+                    <th>Size (MB)</th>
                 </tr>
             </thead>
             <tbody id="appsTable"></tbody>
         </table>
     </div>
-
 </div>
 
 <script>
 
-////////////////////////////////////////////////
-// Dark Mode
-////////////////////////////////////////////////
-
-if (localStorage.getItem("darkMode") === "true") {
-    document.body.classList.add("dark");
+function formatMB(bytes) {
+    if (!bytes) return "0";
+    return (bytes / (1024 * 1024)).toFixed(2);
 }
-
-function toggleDarkMode() {
-    document.body.classList.toggle("dark");
-    localStorage.setItem("darkMode",
-        document.body.classList.contains("dark"));
-}
-
-////////////////////////////////////////////////
-// Routing Logic
-////////////////////////////////////////////////
-
-window.onload = function() {
-    const path = window.location.pathname;
-
-    if (path.startsWith("/client/")) {
-        const uuid = path.split("/client/")[1];
-        showClient(uuid);
-    } else {
-        loadClients();
-    }
-};
-
-////////////////////////////////////////////////
-// Load Clients
-////////////////////////////////////////////////
 
 function loadClients() {
     fetch("/api/clients")
         .then(res => res.json())
         .then(data => {
-            const table = document.getElementById("clientsTable");
+            const table = document.getElementById("clientTable");
             table.innerHTML = "";
 
-            if (data.length === 0) {
-                table.innerHTML =
-                    "<tr><td colspan='5'>No clients found</td></tr>";
-                return;
-            }
+            data.forEach(client => {
+                const row = document.createElement("tr");
 
-            data.forEach(c => {
-                table.innerHTML += `
-                    <tr>
-                        <td>${c.hostname}</td>
-                        <td>${c.ip}</td>
-                        <td>${c.mac}</td>
-                        <td>${c.status}</td>
-                        <td>
-                            <a href="/client/${c.uuid}" class="btn btn-view">View</a>
-                            <button class="btn btn-delete"
-                                onclick="deleteClient('${c.uuid}')">
-                                Delete
-                            </button>
-                        </td>
-                    </tr>
+                row.innerHTML = `
+                    <td>${client.uuid}</td>
+                    <td>${client.hostname}</td>
+                    <td>${client.ip}</td>
+                    <td>${client.mac}</td>
+                    <td>${client.last_seen}</td>
+                    <td class="${client.status === "Online" ? "online" : "offline"}">${client.status}</td>
+                    <td>
+                        <button class="view-btn" onclick="viewClient('${client.uuid}')">View</button>
+                        <button class="pdf-btn" onclick="downloadPDF('${client.uuid}')">PDF</button>
+                        <button class="delete-btn" onclick="deleteClient('${client.uuid}')">Delete</button>
+                    </td>
                 `;
+
+                table.appendChild(row);
             });
         });
 }
 
-////////////////////////////////////////////////
-// Show Single Client
-////////////////////////////////////////////////
-
-function showClient(uuid) {
-
-    document.getElementById("listView").classList.add("hidden");
-    document.getElementById("detailView").classList.remove("hidden");
-
-    fetch("/api/client/" + uuid)
+function viewClient(uuid) {
+    fetch(`/api/client/${uuid}`)
         .then(res => res.json())
-        .then(data => {
+        .then(client => {
 
-            document.getElementById("clientTitle").innerText =
-                "Hardware Information (" + data.hostname + ")";
+            document.getElementById("clientList").style.display = "none";
+            document.getElementById("clientDetail").style.display = "block";
 
-            document.getElementById("pdfBtn").onclick = function() {
-                window.location =
-                    "/api/client/" + uuid + "/pdf";
-            };
+            document.getElementById("detailHostname").innerText = client.hostname;
+            document.getElementById("detailUUID").innerText = client.uuid;
+            document.getElementById("detailIP").innerText = client.ip;
+            document.getElementById("detailMAC").innerText = client.mac;
+            document.getElementById("detailLastSeen").innerText = client.last_seen;
 
-            const grid =
-                document.getElementById("hardwareGrid");
-            grid.innerHTML = "";
-
-            for (const key in data.hardware) {
-                grid.innerHTML += `
-                    <div class="info-box">
-                        <strong>${key}</strong><br>
-                        ${data.hardware[key]}
-                    </div>
-                `;
+            // Hardware
+            const hwDiv = document.getElementById("hardwareInfo");
+            hwDiv.innerHTML = "";
+            for (let key in client.hardware) {
+                if (key !== "Disks") {
+                    hwDiv.innerHTML += `<div class="card"><b>${key}:</b> ${client.hardware[key]}</div>`;
+                }
             }
 
-            const apps =
-                document.getElementById("appsTable");
-            apps.innerHTML = "";
+            // Disks
+            const diskDiv = document.getElementById("diskInfo");
+            diskDiv.innerHTML = "";
 
-            if (data.apps.length === 0) {
-                apps.innerHTML =
-                    "<tr><td colspan='4'>No apps found</td></tr>";
-                return;
+            if (client.hardware.Disks && Array.isArray(client.hardware.Disks)) {
+                client.hardware.Disks.forEach(d => {
+                    diskDiv.innerHTML += `
+                        <div class="card">
+                            <b>Drive:</b> ${d.device || d.mountpoint}<br>
+                            <b>Total:</b> ${formatMB(d.total)} MB<br>
+                            <b>Used:</b> ${formatMB(d.used)} MB<br>
+                            <b>Free:</b> ${formatMB(d.free)} MB
+                        </div>
+                    `;
+                });
             }
 
-            data.apps.forEach(a => {
-                apps.innerHTML += `
+            // Apps
+            const appsTable = document.getElementById("appsTable");
+            appsTable.innerHTML = "";
+
+            client.apps.forEach(app => {
+                appsTable.innerHTML += `
                     <tr>
-                        <td>${a.name || ""}</td>
-                        <td>${a.version || ""}</td>
-                        <td>${a.install_date || ""}</td>
-                        <td>${a.size_bytes || ""}</td>
+                        <td>${app.name}</td>
+                        <td>${app.version}</td>
+                        <td>${app.install_date}</td>
+                        <td>${formatMB(app.size_bytes)} MB</td>
                     </tr>
                 `;
             });
+
         });
 }
 
-////////////////////////////////////////////////
-// Navigation
-////////////////////////////////////////////////
-
-function goHome() {
-    window.location = "/";
+function downloadPDF(uuid) {
+    window.open(`/api/client/${uuid}/pdf`, "_blank");
 }
-
-////////////////////////////////////////////////
-// Delete Client
-////////////////////////////////////////////////
 
 function deleteClient(uuid) {
     if (!confirm("Delete this client?")) return;
 
-    fetch("/api/client/" + uuid, { method: "DELETE" })
-        .then(() => {
-            window.location = "/";
-        });
+    fetch(`/api/client/${uuid}`, { method: "DELETE" })
+        .then(() => loadClients());
 }
 
-////////////////////////////////////////////////
-// Export CSV
-////////////////////////////////////////////////
-
-function exportCSV() {
-    fetch("/api/clients")
-        .then(res => res.json())
-        .then(data => {
-
-            let csv =
-                "Hostname,IP,MAC,Status,Last Seen\n";
-
-            data.forEach(c => {
-                csv += `"${c.hostname}",
-"${c.ip}",
-"${c.mac}",
-"${c.status}",
-"${c.last_seen}"\n`;
-            });
-
-            const blob =
-                new Blob([csv], { type: "text/csv" });
-
-            const url =
-                window.URL.createObjectURL(blob);
-
-            const a =
-                document.createElement("a");
-
-            a.href = url;
-            a.download = "clients.csv";
-            a.click();
-        });
+function goBack() {
+    document.getElementById("clientDetail").style.display = "none";
+    document.getElementById("clientList").style.display = "block";
 }
+
+loadClients();
 
 </script>
 
