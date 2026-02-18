@@ -1532,7 +1532,7 @@
 
 
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file
 import sqlite3
 import json
 import csv
@@ -1541,7 +1541,6 @@ import os
 from datetime import datetime
 
 app = Flask(__name__)
-
 DATABASE = "clients.db"
 
 # ---------------- DATABASE ---------------- #
@@ -1573,28 +1572,40 @@ def init_db():
     conn.commit()
     conn.close()
 
-# ---------------- ROUTES ---------------- #
+# ---------------- MAIN DASHBOARD ---------------- #
 
 @app.route("/")
 def dashboard():
+    view_id = request.args.get("view")
+
     conn = get_db()
     clients = conn.execute("SELECT * FROM clients ORDER BY id DESC").fetchall()
+
+    selected_client = None
+    disks = []
+    apps = []
+
+    if view_id:
+        selected_client = conn.execute(
+            "SELECT * FROM clients WHERE id=?",
+            (view_id,)
+        ).fetchone()
+
+        if selected_client:
+            disks = json.loads(selected_client["disks"]) if selected_client["disks"] else []
+            apps = json.loads(selected_client["apps"]) if selected_client["apps"] else []
+
     conn.close()
-    return render_template("dashboard.html", clients=clients)
 
-@app.route("/view/<int:client_id>")
-def view_client(client_id):
-    conn = get_db()
-    client = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
-    conn.close()
+    return render_template(
+        "dashboard.html",
+        clients=clients,
+        selected_client=selected_client,
+        disks=disks,
+        apps=apps
+    )
 
-    if not client:
-        return redirect(url_for("dashboard"))
-
-    disks = json.loads(client["disks"]) if client["disks"] else []
-    apps = json.loads(client["apps"]) if client["apps"] else []
-
-    return render_template("client.html", client=client, disks=disks, apps=apps)
+# ---------------- RECEIVE CLIENT DATA ---------------- #
 
 @app.route("/api/client", methods=["POST"])
 def receive_client():
@@ -1604,7 +1615,8 @@ def receive_client():
     conn.execute("""
         INSERT INTO clients (
             hostname, user, ip, os, platform, ram,
-            cpu, cpu_cores, logical_cpus, disks, apps, created_at
+            cpu, cpu_cores, logical_cpus,
+            disks, apps, created_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         data.get("hostname"),
@@ -1625,6 +1637,8 @@ def receive_client():
 
     return jsonify({"status": "success"})
 
+# ---------------- CSV EXPORT ---------------- #
+
 @app.route("/export_csv")
 def export_csv():
     conn = get_db()
@@ -1635,8 +1649,8 @@ def export_csv():
     writer = csv.writer(output)
 
     writer.writerow([
-        "ID", "Hostname", "User", "IP",
-        "OS", "RAM", "CPU", "Created At"
+        "ID", "Hostname", "User",
+        "IP", "OS", "RAM", "CPU", "Created At"
     ])
 
     for c in clients:
@@ -1659,6 +1673,8 @@ def export_csv():
         as_attachment=True,
         download_name="clients_export.csv"
     )
+
+# ---------------- START ---------------- #
 
 if __name__ == "__main__":
     init_db()
