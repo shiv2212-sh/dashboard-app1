@@ -1901,12 +1901,12 @@ import os
 import json
 import datetime
 import psycopg2
+from io import BytesIO
 from flask import Flask, jsonify, render_template, request, send_file
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
-import tempfile
 
 # ---------------- CONFIG ----------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -1985,7 +1985,7 @@ def api_report():
         data.get("uuid"),
         data.get("mac"),
         data.get("hostname"),
-        datetime.datetime.utcnow(),  # server time
+        datetime.datetime.utcnow(),
         data.get("hardware", {}).get("IP Address"),
         hardware,
         apps
@@ -2067,12 +2067,12 @@ def download_pdf(uuid):
     hardware = safe_json(r[3])
     apps = safe_json(r[4])
 
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    doc = SimpleDocTemplate(temp.name, pagesize=A4)
+    # Use in-memory buffer
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
     elements = []
     styles = getSampleStyleSheet()
 
-    # Title
     elements.append(Paragraph("Client System Report", styles["Title"]))
     elements.append(Spacer(1, 15))
     elements.append(Paragraph(f"<b>Hostname:</b> {r[0]}", styles["Normal"]))
@@ -2080,7 +2080,7 @@ def download_pdf(uuid):
     elements.append(Paragraph(f"<b>MAC:</b> {r[2]}", styles["Normal"]))
     elements.append(Spacer(1, 20))
 
-    # Hardware
+    # Hardware Table
     hw_data = [["Key", "Value"]]
     for k, v in hardware.items():
         if k != "Disks":
@@ -2092,9 +2092,9 @@ def download_pdf(uuid):
         ('GRID',(0,0),(-1,-1),0.5,colors.grey),
     ]))
     elements.append(hw_table)
-    elements.append(Spacer(1, 15))
+    elements.append(Spacer(1,15))
 
-    # Disks
+    # Disks Table
     disks = hardware.get("Disks", [])
     if disks:
         disk_data = [["Drive", "Total (GB)", "Used (GB)", "Free (GB)"]]
@@ -2112,9 +2112,9 @@ def download_pdf(uuid):
             ('GRID',(0,0),(-1,-1),0.5,colors.grey),
         ]))
         elements.append(disk_table)
-        elements.append(Spacer(1, 15))
+        elements.append(Spacer(1,15))
 
-    # Apps
+    # Apps Table
     apps_data = [["Name", "Version", "Install Date", "Size (MB)"]]
     for a in apps:
         size_mb = round(a.get("size_bytes", 0) / (1024*1024), 2)
@@ -2133,9 +2133,9 @@ def download_pdf(uuid):
     elements.append(apps_table)
 
     doc.build(elements)
-    temp.close()
+    buffer.seek(0)
 
-    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.pdf", mimetype="application/pdf")
+    return send_file(buffer, as_attachment=True, download_name=f"{uuid}.pdf", mimetype="application/pdf")
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
