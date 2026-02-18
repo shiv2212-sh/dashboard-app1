@@ -570,202 +570,345 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<title>Client Dashboard</title>
+    <meta charset="UTF-8">
+    <title>Client Dashboard</title>
 
-<style>
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 20px;
-    background: #f4f6f9;
-    color: #222;
-    transition: 0.3s;
-}
+    <style>
+        :root {
+            --bg: #f5f6fa;
+            --card: #ffffff;
+            --text: #000000;
+            --primary: #1877f2;
+        }
 
-body.dark {
-    background: #121212;
-    color: #eee;
-}
+        body.dark {
+            --bg: #1e1e1e;
+            --card: #2c2c2c;
+            --text: #ffffff;
+            --primary: #3498db;
+        }
 
-h1 {
-    margin-bottom: 20px;
-}
+        body {
+            font-family: Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            transition: 0.3s;
+        }
 
-.top-bar {
-    display: flex;
-    justify-content: space-between;
-    margin-bottom: 20px;
-}
+        .top-bar {
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            margin-bottom:20px;
+        }
 
-button, .btn {
-    padding: 8px 14px;
-    border: none;
-    background: #007bff;
-    color: white;
-    text-decoration: none;
-    border-radius: 5px;
-    cursor: pointer;
-    font-size: 14px;
-}
+        h1 { margin:0; }
 
-button:hover, .btn:hover {
-    opacity: 0.85;
-}
+        .card {
+            background: var(--card);
+            padding:20px;
+            border-radius:10px;
+            box-shadow:0 2px 10px rgba(0,0,0,0.08);
+            margin-bottom:20px;
+        }
 
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-}
+        table {
+            width:100%;
+            border-collapse: collapse;
+        }
 
-th, td {
-    padding: 10px;
-    border-bottom: 1px solid #ddd;
-    text-align: left;
-}
+        th {
+            background: var(--primary);
+            color:white;
+            padding:10px;
+            text-align:left;
+        }
 
-body.dark th,
-body.dark td {
-    border-bottom: 1px solid #333;
-}
+        td {
+            padding:10px;
+            border-bottom:1px solid #ddd;
+        }
 
-.card {
-    margin-top: 40px;
-    padding: 20px;
-    border-radius: 10px;
-    background: white;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-}
+        .btn {
+            padding:6px 12px;
+            border:none;
+            border-radius:6px;
+            cursor:pointer;
+            text-decoration:none;
+            color:white;
+            font-size:14px;
+            margin-left:5px;
+        }
 
-body.dark .card {
-    background: #1e1e1e;
-}
+        .btn-view { background:#1877f2; }
+        .btn-delete { background:#e74c3c; }
+        .btn-back { background:#555; }
+        .btn-pdf { background:#27ae60; }
+        .btn-toggle { background:#444; }
+        .btn-csv { background:#16a085; }
 
-.section-title {
-    margin-bottom: 15px;
-    font-size: 18px;
-    font-weight: bold;
-    border-bottom: 1px solid #ccc;
-    padding-bottom: 5px;
-}
+        .grid {
+            display:grid;
+            grid-template-columns: repeat(auto-fit,minmax(220px,1fr));
+            gap:15px;
+        }
 
-body.dark .section-title {
-    border-bottom: 1px solid #444;
-}
-</style>
+        .info-box {
+            background:#f0f0f0;
+            padding:15px;
+            border-radius:8px;
+        }
+
+        body.dark .info-box {
+            background:#3a3a3a;
+        }
+
+        .hidden { display:none; }
+    </style>
 </head>
-
 <body>
 
-<h1>Client Management Dashboard</h1>
-
 <div class="top-bar">
-    <div></div>
+    <h1>Client Dashboard</h1>
     <div>
-        <button onclick="toggleDark()">Toggle Dark Mode</button>
+        <button class="btn btn-csv" onclick="exportCSV()">Export CSV</button>
+        <button class="btn btn-toggle" onclick="toggleDarkMode()">Toggle Dark Mode</button>
     </div>
 </div>
 
-<!-- CLIENT LIST -->
+<!-- ================= LIST VIEW ================= -->
 
-<table>
-<tr>
-    <th>Hostname</th>
-    <th>MAC Address</th>
-    <th>IP</th>
-    <th>Last Seen</th>
-    <th>Action</th>
-</tr>
-
-{% for client in clients %}
-<tr>
-    <td>{{ client.hostname }}</td>
-    <td>{{ client.mac_address }}</td>
-    <td>{{ client.ip }}</td>
-    <td>{{ client.last_seen }}</td>
-    <td>
-        <a href="/?view={{ client.client_uuid }}" class="btn">View</a>
-    </td>
-</tr>
-{% endfor %}
-</table>
-
-
-<!-- SELECTED CLIENT DETAILS -->
-
-{% if selected_client %}
-
-<div class="card">
-    <div class="section-title">Hardware Information</div>
-
-    <p><strong>Hostname:</strong> {{ selected_client.hostname }}</p>
-    <p><strong>Client Reported IP:</strong> {{ selected_client.client_ip }}</p>
-    <p><strong>Server Detected IP:</strong> {{ selected_client.ip }}</p>
-
-    <p><strong>OS:</strong> {{ hardware.os }}</p>
-    <p><strong>Platform:</strong> {{ hardware.platform }}</p>
-    <p><strong>RAM (GB):</strong> {{ hardware.ram }}</p>
-    <p><strong>CPU:</strong> {{ hardware.cpu }}</p>
-    <p><strong>CPU Cores:</strong> {{ hardware.cpu_cores }}</p>
-    <p><strong>Logical CPUs:</strong> {{ hardware.logical_cpus }}</p>
-</div>
-
-{% if hardware.disks %}
-<div class="card">
-    <div class="section-title">Disk Information</div>
+<div id="listView" class="card">
+    <h2>Registered Clients</h2>
     <table>
-        <tr>
-            <th>Device</th>
-            <th>Total (GB)</th>
-            <th>Used (GB)</th>
-            <th>Free (GB)</th>
-        </tr>
-        {% for disk in hardware.disks %}
-        <tr>
-            <td>{{ disk.Device }}</td>
-            <td>{{ disk["Total (GB)"] }}</td>
-            <td>{{ disk["Used (GB)"] }}</td>
-            <td>{{ disk["Free (GB)"] }}</td>
-        </tr>
-        {% endfor %}
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>IP</th>
+                <th>MAC</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody id="clientsTable"></tbody>
     </table>
 </div>
-{% endif %}
 
-{% if apps %}
-<div class="card">
-    <div class="section-title">Installed Applications</div>
-    <table>
-        <tr>
-            <th>Name</th>
-            <th>Version</th>
-            <th>Install Date</th>
-            <th>Size</th>
-        </tr>
-        {% for app in apps %}
-        <tr>
-            <td>{{ app.name }}</td>
-            <td>{{ app.version }}</td>
-            <td>{{ app.install_date }}</td>
-            <td>{{ app.size }}</td>
-        </tr>
-        {% endfor %}
-    </table>
+<!-- ================= DETAIL VIEW ================= -->
+
+<div id="detailView" class="hidden">
+
+    <div class="card">
+        <button class="btn btn-back" onclick="goHome()">⬅ Back</button>
+        <button id="pdfBtn" class="btn btn-pdf" style="float:right;">Export PDF</button>
+        <h2 id="clientTitle"></h2>
+    </div>
+
+    <div class="card">
+        <h3>Hardware Information</h3>
+        <div class="grid" id="hardwareGrid"></div>
+    </div>
+
+    <div class="card">
+        <h3>Installed Applications</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Version</th>
+                    <th>Install Date</th>
+                    <th>Size (Bytes)</th>
+                </tr>
+            </thead>
+            <tbody id="appsTable"></tbody>
+        </table>
+    </div>
+
 </div>
-{% endif %}
-
-<div style="margin-top:20px;">
-    <a href="/" class="btn">← Back to Dashboard</a>
-</div>
-
-{% endif %}
-
 
 <script>
-function toggleDark() {
-    document.body.classList.toggle("dark");
+
+////////////////////////////////////////////////
+// Dark Mode
+////////////////////////////////////////////////
+
+if (localStorage.getItem("darkMode") === "true") {
+    document.body.classList.add("dark");
 }
+
+function toggleDarkMode() {
+    document.body.classList.toggle("dark");
+    localStorage.setItem("darkMode",
+        document.body.classList.contains("dark"));
+}
+
+////////////////////////////////////////////////
+// Routing Logic
+////////////////////////////////////////////////
+
+window.onload = function() {
+    const path = window.location.pathname;
+
+    if (path.startsWith("/client/")) {
+        const uuid = path.split("/client/")[1];
+        showClient(uuid);
+    } else {
+        loadClients();
+    }
+};
+
+////////////////////////////////////////////////
+// Load Clients
+////////////////////////////////////////////////
+
+function loadClients() {
+    fetch("/api/clients")
+        .then(res => res.json())
+        .then(data => {
+            const table = document.getElementById("clientsTable");
+            table.innerHTML = "";
+
+            if (data.length === 0) {
+                table.innerHTML =
+                    "<tr><td colspan='5'>No clients found</td></tr>";
+                return;
+            }
+
+            data.forEach(c => {
+                table.innerHTML += `
+                    <tr>
+                        <td>${c.hostname}</td>
+                        <td>${c.ip}</td>
+                        <td>${c.mac}</td>
+                        <td>${c.status}</td>
+                        <td>
+                            <a href="/client/${c.uuid}" class="btn btn-view">View</a>
+                            <button class="btn btn-delete"
+                                onclick="deleteClient('${c.uuid}')">
+                                Delete
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+        });
+}
+
+////////////////////////////////////////////////
+// Show Single Client
+////////////////////////////////////////////////
+
+function showClient(uuid) {
+
+    document.getElementById("listView").classList.add("hidden");
+    document.getElementById("detailView").classList.remove("hidden");
+
+    fetch("/api/client/" + uuid)
+        .then(res => res.json())
+        .then(data => {
+
+            document.getElementById("clientTitle").innerText =
+                "Hardware Information (" + data.hostname + ")";
+
+            document.getElementById("pdfBtn").onclick = function() {
+                window.location =
+                    "/api/client/" + uuid + "/pdf";
+            };
+
+            const grid =
+                document.getElementById("hardwareGrid");
+            grid.innerHTML = "";
+
+            for (const key in data.hardware) {
+                grid.innerHTML += `
+                    <div class="info-box">
+                        <strong>${key}</strong><br>
+                        ${data.hardware[key]}
+                    </div>
+                `;
+            }
+
+            const apps =
+                document.getElementById("appsTable");
+            apps.innerHTML = "";
+
+            if (data.apps.length === 0) {
+                apps.innerHTML =
+                    "<tr><td colspan='4'>No apps found</td></tr>";
+                return;
+            }
+
+            data.apps.forEach(a => {
+                apps.innerHTML += `
+                    <tr>
+                        <td>${a.name || ""}</td>
+                        <td>${a.version || ""}</td>
+                        <td>${a.install_date || ""}</td>
+                        <td>${a.size_bytes || ""}</td>
+                    </tr>
+                `;
+            });
+        });
+}
+
+////////////////////////////////////////////////
+// Navigation
+////////////////////////////////////////////////
+
+function goHome() {
+    window.location = "/";
+}
+
+////////////////////////////////////////////////
+// Delete Client
+////////////////////////////////////////////////
+
+function deleteClient(uuid) {
+    if (!confirm("Delete this client?")) return;
+
+    fetch("/api/client/" + uuid, { method: "DELETE" })
+        .then(() => {
+            window.location = "/";
+        });
+}
+
+////////////////////////////////////////////////
+// Export CSV
+////////////////////////////////////////////////
+
+function exportCSV() {
+    fetch("/api/clients")
+        .then(res => res.json())
+        .then(data => {
+
+            let csv =
+                "Hostname,IP,MAC,Status,Last Seen\n";
+
+            data.forEach(c => {
+                csv += `"${c.hostname}",
+"${c.ip}",
+"${c.mac}",
+"${c.status}",
+"${c.last_seen}"\n`;
+            });
+
+            const blob =
+                new Blob([csv], { type: "text/csv" });
+
+            const url =
+                window.URL.createObjectURL(blob);
+
+            const a =
+                document.createElement("a");
+
+            a.href = url;
+            a.download = "clients.csv";
+            a.click();
+        });
+}
+
 </script>
 
 </body>
