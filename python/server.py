@@ -1297,222 +1297,370 @@
 
 
 
-import os
+# import os
+# import json
+# import datetime
+# import psycopg2
+# import csv
+# import io
+# from flask import Flask, jsonify, render_template, request, Response, redirect, url_for
+# from reportlab.lib.pagesizes import A4
+# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+# from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.lib import colors
+# import tempfile
+
+# DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# app = Flask(__name__, template_folder="templates")
+
+# # ---------------- DATABASE ----------------
+
+# def get_db():
+#     return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+# def init_db():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#         CREATE TABLE IF NOT EXISTS clients (
+#             client_uuid TEXT PRIMARY KEY,
+#             mac_address TEXT,
+#             hostname TEXT,
+#             last_seen TIMESTAMP,
+#             ip TEXT,
+#             hardware JSONB,
+#             apps JSONB
+#         )
+#     """)
+#     con.commit()
+#     con.close()
+
+# if DATABASE_URL:
+#     init_db()
+
+# # ---------------- HELPERS ----------------
+
+# def safe_json(v):
+#     try:
+#         return v if isinstance(v, (dict, list)) else json.loads(v)
+#     except:
+#         return {}
+
+# def status_from_last_seen(ts):
+#     if not ts:
+#         return "Offline"
+#     diff = (datetime.datetime.utcnow() - ts).total_seconds()
+#     return "Online" if diff <= 120 else "Offline"
+
+# # ---------------- DASHBOARD ----------------
+
+# @app.route("/")
+# def dashboard():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients ORDER BY last_seen DESC")
+#     rows = cur.fetchall()
+#     con.close()
+
+#     clients = []
+#     for r in rows:
+#         clients.append({
+#             "uuid": r[0],
+#             "hostname": r[1],
+#             "ip": r[2],
+#             "mac": r[3],
+#             "last_seen": r[4],
+#             "status": status_from_last_seen(r[4])
+#         })
+
+#     return render_template("dashboard.html", clients=clients, client=None)
+
+
+# @app.route("/client/<uuid>")
+# def client_view(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#         SELECT client_uuid, hostname, ip, mac_address,
+#                last_seen, hardware, apps
+#         FROM clients WHERE client_uuid=%s
+#     """, (uuid,))
+#     r = cur.fetchone()
+#     con.close()
+
+#     if not r:
+#         return redirect(url_for("dashboard"))
+
+#     hardware = safe_json(r[5])
+
+#     client = {
+#         "uuid": r[0],
+#         "hostname": r[1],
+#         "ip_address": r[2],
+#         "mac": r[3],
+#         "last_seen": r[4],
+#         "cpu": hardware.get("CPU"),
+#         "cpu_cores": hardware.get("CPU Cores"),
+#         "logical_cpus": hardware.get("Logical CPUs"),
+#         "ram_gb": hardware.get("RAM (GB)"),
+#         "os": hardware.get("OS"),
+#         "platform": hardware.get("Platform"),
+#         "user": hardware.get("User"),
+#         "disks": hardware.get("Disks", [])
+#     }
+
+#     # load client list again
+#     return dashboard_with_selected(client)
+
+
+# def dashboard_with_selected(selected_client):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients ORDER BY last_seen DESC")
+#     rows = cur.fetchall()
+#     con.close()
+
+#     clients = []
+#     for r in rows:
+#         clients.append({
+#             "uuid": r[0],
+#             "hostname": r[1],
+#             "ip": r[2],
+#             "mac": r[3],
+#             "last_seen": r[4],
+#             "status": status_from_last_seen(r[4])
+#         })
+
+#     return render_template("dashboard.html", clients=clients, client=selected_client)
+
+# # ---------------- CSV EXPORT ----------------
+
+# @app.route("/export/csv")
+# def export_csv():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients")
+#     rows = cur.fetchall()
+#     con.close()
+
+#     output = io.StringIO()
+#     writer = csv.writer(output)
+#     writer.writerow(["UUID", "Hostname", "IP", "MAC", "Last Seen"])
+
+#     for r in rows:
+#         writer.writerow([
+#             r[0],
+#             r[1],
+#             r[2],
+#             r[3],
+#             r[4]
+#         ])
+
+#     return Response(
+#         output.getvalue(),
+#         mimetype="text/csv",
+#         headers={"Content-Disposition": "attachment;filename=clients.csv"}
+#     )
+
+# # ---------------- REPORT API ----------------
+
+# @app.route("/api/report", methods=["POST"])
+# def api_report():
+#     data = request.json
+
+#     hardware = json.dumps(data.get("hardware", {}))
+#     apps = json.dumps(data.get("apps", []))
+
+#     con = get_db()
+#     cur = con.cursor()
+
+#     cur.execute("""
+#         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
+#         VALUES (%s,%s,%s,%s,%s,%s,%s)
+#         ON CONFLICT (client_uuid)
+#         DO UPDATE SET
+#             mac_address=EXCLUDED.mac_address,
+#             hostname=EXCLUDED.hostname,
+#             last_seen=EXCLUDED.last_seen,
+#             ip=EXCLUDED.ip,
+#             hardware=EXCLUDED.hardware,
+#             apps=EXCLUDED.apps
+#     """, (
+#         data.get("uuid"),
+#         data.get("mac"),
+#         data.get("hostname"),
+#         data.get("timestamp"),
+#         data.get("hardware", {}).get("IP Address"),
+#         hardware,
+#         apps
+#     ))
+
+#     con.commit()
+#     con.close()
+#     return jsonify({"status": "ok"})
+
+# # ---------------- DELETE ----------------
+
+# @app.route("/delete/<uuid>")
+# def delete_client(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+#     con.commit()
+#     con.close()
+#     return redirect(url_for("dashboard"))
+
+# # ---------------- RUN ----------------
+
+# if __name__ == "__main__":
+#     port = int(os.environ.get("PORT", 5000))
+#     app.run(host="0.0.0.0", port=port)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+from flask import Flask, render_template, request, redirect, url_for, jsonify, send_file
+import sqlite3
 import json
-import datetime
-import psycopg2
 import csv
 import io
-from flask import Flask, jsonify, render_template, request, Response, redirect, url_for
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-import tempfile
+import os
+from datetime import datetime
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+app = Flask(__name__)
 
-app = Flask(__name__, template_folder="templates")
+DATABASE = "clients.db"
 
-# ---------------- DATABASE ----------------
+# ---------------- DATABASE ---------------- #
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 def init_db():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("""
+    conn = get_db()
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS clients (
-            client_uuid TEXT PRIMARY KEY,
-            mac_address TEXT,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             hostname TEXT,
-            last_seen TIMESTAMP,
+            user TEXT,
             ip TEXT,
-            hardware JSONB,
-            apps JSONB
+            os TEXT,
+            platform TEXT,
+            ram REAL,
+            cpu TEXT,
+            cpu_cores INTEGER,
+            logical_cpus INTEGER,
+            disks TEXT,
+            apps TEXT,
+            created_at TEXT
         )
     """)
-    con.commit()
-    con.close()
+    conn.commit()
+    conn.close()
 
-if DATABASE_URL:
-    init_db()
-
-# ---------------- HELPERS ----------------
-
-def safe_json(v):
-    try:
-        return v if isinstance(v, (dict, list)) else json.loads(v)
-    except:
-        return {}
-
-def status_from_last_seen(ts):
-    if not ts:
-        return "Offline"
-    diff = (datetime.datetime.utcnow() - ts).total_seconds()
-    return "Online" if diff <= 120 else "Offline"
-
-# ---------------- DASHBOARD ----------------
+# ---------------- ROUTES ---------------- #
 
 @app.route("/")
 def dashboard():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients ORDER BY last_seen DESC")
-    rows = cur.fetchall()
-    con.close()
+    conn = get_db()
+    clients = conn.execute("SELECT * FROM clients ORDER BY id DESC").fetchall()
+    conn.close()
+    return render_template("dashboard.html", clients=clients)
 
-    clients = []
-    for r in rows:
-        clients.append({
-            "uuid": r[0],
-            "hostname": r[1],
-            "ip": r[2],
-            "mac": r[3],
-            "last_seen": r[4],
-            "status": status_from_last_seen(r[4])
-        })
+@app.route("/view/<int:client_id>")
+def view_client(client_id):
+    conn = get_db()
+    client = conn.execute("SELECT * FROM clients WHERE id=?", (client_id,)).fetchone()
+    conn.close()
 
-    return render_template("dashboard.html", clients=clients, client=None)
-
-
-@app.route("/client/<uuid>")
-def client_view(uuid):
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("""
-        SELECT client_uuid, hostname, ip, mac_address,
-               last_seen, hardware, apps
-        FROM clients WHERE client_uuid=%s
-    """, (uuid,))
-    r = cur.fetchone()
-    con.close()
-
-    if not r:
+    if not client:
         return redirect(url_for("dashboard"))
 
-    hardware = safe_json(r[5])
+    disks = json.loads(client["disks"]) if client["disks"] else []
+    apps = json.loads(client["apps"]) if client["apps"] else []
 
-    client = {
-        "uuid": r[0],
-        "hostname": r[1],
-        "ip_address": r[2],
-        "mac": r[3],
-        "last_seen": r[4],
-        "cpu": hardware.get("CPU"),
-        "cpu_cores": hardware.get("CPU Cores"),
-        "logical_cpus": hardware.get("Logical CPUs"),
-        "ram_gb": hardware.get("RAM (GB)"),
-        "os": hardware.get("OS"),
-        "platform": hardware.get("Platform"),
-        "user": hardware.get("User"),
-        "disks": hardware.get("Disks", [])
-    }
+    return render_template("client.html", client=client, disks=disks, apps=apps)
 
-    # load client list again
-    return dashboard_with_selected(client)
+@app.route("/api/client", methods=["POST"])
+def receive_client():
+    data = request.json
 
+    conn = get_db()
+    conn.execute("""
+        INSERT INTO clients (
+            hostname, user, ip, os, platform, ram,
+            cpu, cpu_cores, logical_cpus, disks, apps, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        data.get("hostname"),
+        data.get("user"),
+        request.remote_addr,
+        data.get("os"),
+        data.get("platform"),
+        data.get("ram"),
+        data.get("cpu"),
+        data.get("cpu_cores"),
+        data.get("logical_cpus"),
+        json.dumps(data.get("disks")),
+        json.dumps(data.get("apps")),
+        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    ))
+    conn.commit()
+    conn.close()
 
-def dashboard_with_selected(selected_client):
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients ORDER BY last_seen DESC")
-    rows = cur.fetchall()
-    con.close()
+    return jsonify({"status": "success"})
 
-    clients = []
-    for r in rows:
-        clients.append({
-            "uuid": r[0],
-            "hostname": r[1],
-            "ip": r[2],
-            "mac": r[3],
-            "last_seen": r[4],
-            "status": status_from_last_seen(r[4])
-        })
-
-    return render_template("dashboard.html", clients=clients, client=selected_client)
-
-# ---------------- CSV EXPORT ----------------
-
-@app.route("/export/csv")
+@app.route("/export_csv")
 def export_csv():
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients")
-    rows = cur.fetchall()
-    con.close()
+    conn = get_db()
+    clients = conn.execute("SELECT * FROM clients").fetchall()
+    conn.close()
 
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(["UUID", "Hostname", "IP", "MAC", "Last Seen"])
 
-    for r in rows:
+    writer.writerow([
+        "ID", "Hostname", "User", "IP",
+        "OS", "RAM", "CPU", "Created At"
+    ])
+
+    for c in clients:
         writer.writerow([
-            r[0],
-            r[1],
-            r[2],
-            r[3],
-            r[4]
+            c["id"],
+            c["hostname"],
+            c["user"],
+            c["ip"],
+            c["os"],
+            c["ram"],
+            c["cpu"],
+            c["created_at"]
         ])
 
-    return Response(
-        output.getvalue(),
+    output.seek(0)
+
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
         mimetype="text/csv",
-        headers={"Content-Disposition": "attachment;filename=clients.csv"}
+        as_attachment=True,
+        download_name="clients_export.csv"
     )
 
-# ---------------- REPORT API ----------------
-
-@app.route("/api/report", methods=["POST"])
-def api_report():
-    data = request.json
-
-    hardware = json.dumps(data.get("hardware", {}))
-    apps = json.dumps(data.get("apps", []))
-
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (client_uuid)
-        DO UPDATE SET
-            mac_address=EXCLUDED.mac_address,
-            hostname=EXCLUDED.hostname,
-            last_seen=EXCLUDED.last_seen,
-            ip=EXCLUDED.ip,
-            hardware=EXCLUDED.hardware,
-            apps=EXCLUDED.apps
-    """, (
-        data.get("uuid"),
-        data.get("mac"),
-        data.get("hostname"),
-        data.get("timestamp"),
-        data.get("hardware", {}).get("IP Address"),
-        hardware,
-        apps
-    ))
-
-    con.commit()
-    con.close()
-    return jsonify({"status": "ok"})
-
-# ---------------- DELETE ----------------
-
-@app.route("/delete/<uuid>")
-def delete_client(uuid):
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
-    con.commit()
-    con.close()
-    return redirect(url_for("dashboard"))
-
-# ---------------- RUN ----------------
-
 if __name__ == "__main__":
+    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
