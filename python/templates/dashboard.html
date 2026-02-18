@@ -575,16 +575,14 @@
 <title>Enterprise Client Monitoring</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 <style>
-body { background:#f4f6f9; color:#1f2937; transition: background 0.3s, color 0.3s; }
-body.dark { background:#121212; color:#f0f0f0; }
+body { background:#f4f6f9; color:#1f2937; }
 .card { border-radius:14px; border:none; margin-bottom:15px; }
 .stat-card { padding:20px; text-align:center; font-weight:600; }
 .stat-number { font-size:28px; }
 .status-online { color:#22c55e; font-weight:bold; }
 .status-offline { color:#ef4444; font-weight:bold; }
 .navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
-.modal-content { background:#fff; }
-body.dark .modal-content { background:#1e1e1e; color:#f0f0f0; }
+.modal-dialog { max-width: 800px; }
 </style>
 </head>
 <body>
@@ -596,8 +594,7 @@ body.dark .modal-content { background:#1e1e1e; color:#f0f0f0; }
         <button id="refreshBtn" class="btn btn-primary" onclick="loadClients()">Refresh</button>
         <button id="deleteBtn" class="btn btn-danger d-none" onclick="deleteClient()">Delete</button>
         <button id="pdfBtn" class="btn btn-success d-none" onclick="downloadPDF()">Download PDF</button>
-        <button id="csvBtn" class="btn btn-warning d-none" onclick="downloadCSV()">Export CSV</button>
-        <button class="btn btn-dark" onclick="toggleDarkMode()">Dark Mode</button>
+        <button id="csvBtn" class="btn btn-warning d-none" onclick="downloadCSV()">Download CSV</button>
     </div>
 </div>
 
@@ -606,14 +603,14 @@ body.dark .modal-content { background:#1e1e1e; color:#f0f0f0; }
 </div>
 
 <!-- App History Modal -->
-<div class="modal fade" id="historyModal" tabindex="-1" aria-labelledby="historyModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content p-4">
+<div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title" id="historyModalLabel">App History</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <h5 class="modal-title">App History</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body" id="historyModalBody">
+      <div class="modal-body" id="historyBody">
         Loading...
       </div>
     </div>
@@ -625,13 +622,10 @@ body.dark .modal-content { background:#1e1e1e; color:#f0f0f0; }
 
 const API_BASE = "/api";
 let currentUUID = null;
-let darkMode = false;
 
-function toggleDarkMode(){
-    darkMode = !darkMode;
-    document.body.classList.toggle("dark", darkMode);
-}
-
+// ----------------------------
+// ROUTE HANDLER
+// ----------------------------
 function goBack(){
     window.location.href = "/";
 }
@@ -646,6 +640,9 @@ function checkRoute(){
     }
 }
 
+// ----------------------------
+// DASHBOARD VIEW
+// ----------------------------
 function showDashboardView(){
     document.getElementById("pageTitle").innerText = "Enterprise Client Monitoring";
     document.getElementById("backBtn").classList.add("d-none");
@@ -685,6 +682,9 @@ function showDashboardView(){
     loadClients();
 }
 
+// ----------------------------
+// LOAD CLIENTS
+// ----------------------------
 async function loadClients(){
     const search = document.getElementById("searchInput")?.value || "";
     const tbody = document.getElementById("clientsTableBody");
@@ -695,7 +695,6 @@ async function loadClients(){
     try{
         const resp = await fetch(`${API_BASE}/clients?search=${encodeURIComponent(search)}`);
         const clients = await resp.json();
-
         tbody.innerHTML="";
         let total=clients.length, online=0, offline=0;
 
@@ -731,6 +730,9 @@ async function loadClients(){
     }
 }
 
+// ----------------------------
+// CLIENT VIEW
+// ----------------------------
 function showClientView(){
     document.getElementById("pageTitle").innerText = "Client Details";
     document.getElementById("backBtn").classList.remove("d-none");
@@ -773,7 +775,7 @@ async function loadClient(){
                 <td>${a.version||""}</td>
                 <td>${a.install_date||""}</td>
                 <td>${a.size_bytes||""}</td>
-                <td><button class="btn btn-sm btn-outline-secondary" onclick="showHistory('${a.name}')">View History</button></td>
+                <td><button class="btn btn-sm btn-outline-primary" onclick="showHistory('${a.name}')">History</button></td>
             </tr>`;
         });
         appsHTML+="</table>";
@@ -793,47 +795,57 @@ async function loadClient(){
     }
 }
 
-// ----------------- History Modal -----------------
+// ----------------------------
+// APP HISTORY POPUP
+// ----------------------------
 async function showHistory(appName){
-    const modalBody = document.getElementById("historyModalBody");
-    modalBody.innerHTML="Loading...";
+    const modalBody = document.getElementById("historyBody");
+    modalBody.innerHTML = "Loading...";
+    const historyModal = new bootstrap.Modal(document.getElementById("historyModal"));
 
     try{
         const resp = await fetch(`${API_BASE}/client/${currentUUID}/history?app=${encodeURIComponent(appName)}`);
-        const data = await resp.json();
+        const history = await resp.json();
 
-        if(data.error){
-            modalBody.innerHTML=data.error;
-            return;
+        if(history.error){
+            modalBody.innerHTML = "No history found.";
+        } else if(history.length===0){
+            modalBody.innerHTML = "<p>No history available for this app.</p>";
+        } else {
+            let html="<ul class='list-group'>";
+            history.forEach(h=>{
+                html+=`<li class='list-group-item'><strong>${h.timestamp}:</strong> ${h.details}</li>`;
+            });
+            html+="</ul>";
+            modalBody.innerHTML = html;
         }
-
-        let html="<table class='table table-sm table-bordered'><tr><th>Timestamp</th><th>Action</th></tr>";
-        data.forEach(h=>{
-            html+=`<tr><td>${h.timestamp}</td><td>${h.action}</td></tr>`;
-        });
-        html+="</table>";
-        modalBody.innerHTML=html;
-
-        let modal = new bootstrap.Modal(document.getElementById('historyModal'));
-        modal.show();
     }catch(e){
-        modalBody.innerHTML="Error loading history.";
+        modalBody.innerHTML = "Error loading history.";
     }
+
+    historyModal.show();
 }
 
-// ----------------- PDF / CSV / Delete -----------------
+// ----------------------------
+// DOWNLOAD PDF & CSV
+// ----------------------------
 function downloadPDF(){
-    window.open(`${API_BASE}/client/${currentUUID}/pdf`, "_blank");
+    window.open(`/api/client/${currentUUID}/pdf`, "_blank");
 }
 
 function downloadCSV(){
-    window.open(`${API_BASE}/client/${currentUUID}/csv`, "_blank");
+    window.open(`/api/client/${currentUUID}/csv`, "_blank");
 }
 
+// ----------------------------
+// DELETE CLIENT
+// ----------------------------
 async function deleteClient(){
     if(!confirm("Delete this client permanently?")) return;
-    const resp = await fetch(`${API_BASE}/client/${currentUUID}`, { method:"DELETE" });
+
+    const resp = await fetch(`${API_BASE}/client/${currentUUID}`, { method: "DELETE" });
     const result = await resp.json();
+
     if(result.status==="deleted"){
         alert("Client deleted.");
         window.location.href="/";
@@ -842,10 +854,8 @@ async function deleteClient(){
     }
 }
 
+// ----------------------------
 checkRoute();
 </script>
 </body>
 </html>
-
-
-
