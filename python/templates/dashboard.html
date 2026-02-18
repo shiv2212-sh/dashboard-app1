@@ -582,7 +582,7 @@ body { background:#f4f6f9; color:#1f2937; }
 .status-online { color:#22c55e; font-weight:bold; }
 .status-offline { color:#ef4444; font-weight:bold; }
 .navbar-custom { padding:18px 30px; display:flex; justify-content:space-between; align-items:center; }
-.modal-dialog { max-width: 800px; }
+.table-hover tbody tr:hover { background-color:#f0f0f0; }
 </style>
 </head>
 <body>
@@ -594,7 +594,6 @@ body { background:#f4f6f9; color:#1f2937; }
         <button id="refreshBtn" class="btn btn-primary" onclick="loadClients()">Refresh</button>
         <button id="deleteBtn" class="btn btn-danger d-none" onclick="deleteClient()">Delete</button>
         <button id="pdfBtn" class="btn btn-success d-none" onclick="downloadPDF()">Download PDF</button>
-        <button id="csvBtn" class="btn btn-warning d-none" onclick="downloadCSV()">Download CSV</button>
     </div>
 </div>
 
@@ -602,13 +601,13 @@ body { background:#f4f6f9; color:#1f2937; }
     <!-- CONTENT RENDERS HERE -->
 </div>
 
-<!-- App History Modal -->
-<div class="modal fade" id="historyModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered">
+<!-- Modal for App History -->
+<div class="modal fade" id="historyModal" tabindex="-1" aria-labelledby="historyModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">App History</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <h5 class="modal-title" id="historyModalLabel">App History</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body" id="historyBody">
         Loading...
@@ -619,13 +618,10 @@ body { background:#f4f6f9; color:#1f2937; }
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-
 const API_BASE = "/api";
 let currentUUID = null;
 
-// ----------------------------
-// ROUTE HANDLER
-// ----------------------------
+// ======== ROUTES ========
 function goBack(){
     window.location.href = "/";
 }
@@ -640,15 +636,12 @@ function checkRoute(){
     }
 }
 
-// ----------------------------
-// DASHBOARD VIEW
-// ----------------------------
+// ======== DASHBOARD VIEW ========
 function showDashboardView(){
     document.getElementById("pageTitle").innerText = "Enterprise Client Monitoring";
     document.getElementById("backBtn").classList.add("d-none");
     document.getElementById("deleteBtn").classList.add("d-none");
     document.getElementById("pdfBtn").classList.add("d-none");
-    document.getElementById("csvBtn").classList.add("d-none");
     document.getElementById("refreshBtn").classList.remove("d-none");
 
     document.getElementById("mainContainer").innerHTML = `
@@ -678,34 +671,26 @@ function showDashboardView(){
             </div>
         </div>
     `;
-
     loadClients();
 }
 
-// ----------------------------
-// LOAD CLIENTS
-// ----------------------------
+// ======== LOAD CLIENTS ========
 async function loadClients(){
     const search = document.getElementById("searchInput")?.value || "";
     const tbody = document.getElementById("clientsTableBody");
-
     if(!tbody) return;
     tbody.innerHTML=`<tr><td colspan="7" class="text-center">Loading...</td></tr>`;
-
     try{
         const resp = await fetch(`${API_BASE}/clients?search=${encodeURIComponent(search)}`);
         const clients = await resp.json();
         tbody.innerHTML="";
         let total=clients.length, online=0, offline=0;
-
         if(total===0){
             tbody.innerHTML=`<tr><td colspan="7" class="text-center">No clients found</td></tr>`;
         }
-
         clients.forEach(c=>{
             if(c.status==="Online") online++; else offline++;
             const cls=c.status==="Online"?"status-online":"status-offline";
-
             tbody.innerHTML+=`
                 <tr>
                     <td>${c.uuid}</td>
@@ -720,25 +705,20 @@ async function loadClients(){
                 </tr>
             `;
         });
-
         document.getElementById("totalCount").innerText=total;
         document.getElementById("onlineCount").innerText=online;
         document.getElementById("offlineCount").innerText=offline;
-
     }catch(e){
         tbody.innerHTML=`<tr><td colspan="7" class="text-center text-danger">Error loading clients</td></tr>`;
     }
 }
 
-// ----------------------------
-// CLIENT VIEW
-// ----------------------------
+// ======== CLIENT VIEW ========
 function showClientView(){
     document.getElementById("pageTitle").innerText = "Client Details";
     document.getElementById("backBtn").classList.remove("d-none");
     document.getElementById("deleteBtn").classList.remove("d-none");
     document.getElementById("pdfBtn").classList.remove("d-none");
-    document.getElementById("csvBtn").classList.remove("d-none");
     document.getElementById("refreshBtn").classList.add("d-none");
 
     document.getElementById("mainContainer").innerHTML = `
@@ -746,22 +726,19 @@ function showClientView(){
             <div id="clientDetails">Loading...</div>
         </div>
     `;
-
     loadClient();
 }
 
+// ======== LOAD CLIENT ========
 async function loadClient(){
     const detailsDiv = document.getElementById("clientDetails");
-
     try{
         const resp = await fetch(`${API_BASE}/client/${currentUUID}`);
         const data = await resp.json();
-
         if(data.error){
             detailsDiv.innerHTML="Client not found.";
             return;
         }
-
         let hwHTML="<h5>Hardware Info</h5><ul>";
         for(let k in data.hardware){
             hwHTML+=`<li><strong>${k}:</strong> ${JSON.stringify(data.hardware[k])}</li>`;
@@ -775,7 +752,7 @@ async function loadClient(){
                 <td>${a.version||""}</td>
                 <td>${a.install_date||""}</td>
                 <td>${a.size_bytes||""}</td>
-                <td><button class="btn btn-sm btn-outline-primary" onclick="showHistory('${a.name}')">History</button></td>
+                <td><button class="btn btn-sm btn-warning" onclick="showHistory('${a.name}')">History</button></td>
             </tr>`;
         });
         appsHTML+="</table>";
@@ -789,72 +766,49 @@ async function loadClient(){
             ${hwHTML}
             ${appsHTML}
         `;
-
     }catch(e){
         detailsDiv.innerHTML="Error loading client data.";
     }
 }
 
-// ----------------------------
-// APP HISTORY POPUP
-// ----------------------------
+// ======== APP HISTORY MODAL ========
 async function showHistory(appName){
     const modalBody = document.getElementById("historyBody");
-    modalBody.innerHTML = "Loading...";
-    const historyModal = new bootstrap.Modal(document.getElementById("historyModal"));
+    modalBody.innerHTML="Loading...";
+    const modal = new bootstrap.Modal(document.getElementById('historyModal'));
+    modal.show();
 
     try{
         const resp = await fetch(`${API_BASE}/client/${currentUUID}/history?app=${encodeURIComponent(appName)}`);
         const history = await resp.json();
-
-        if(history.error){
-            modalBody.innerHTML = "No history found.";
-        } else if(history.length===0){
-            modalBody.innerHTML = "<p>No history available for this app.</p>";
-        } else {
-            let html="<ul class='list-group'>";
-            history.forEach(h=>{
-                html+=`<li class='list-group-item'><strong>${h.timestamp}:</strong> ${h.details}</li>`;
-            });
-            html+="</ul>";
-            modalBody.innerHTML = html;
+        if(history.length===0){
+            modalBody.innerHTML="<p>No history available.</p>";
+            return;
         }
+        let html="<table class='table table-bordered'><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th></tr>";
+        history.forEach(h=>{
+            html+=`<tr><td>${h.timestamp}</td><td>${h.version}</td><td>${h.install_date}</td><td>${h.size_bytes}</td></tr>`;
+        });
+        html+="</table>";
+        modalBody.innerHTML=html;
     }catch(e){
-        modalBody.innerHTML = "Error loading history.";
+        modalBody.innerHTML="<p>Error loading history.</p>";
     }
-
-    historyModal.show();
 }
 
-// ----------------------------
-// DOWNLOAD PDF & CSV
-// ----------------------------
-function downloadPDF(){
-    window.open(`/api/client/${currentUUID}/pdf`, "_blank");
-}
+// ======== DOWNLOAD PDF / DELETE CLIENT ========
+function downloadPDF(){ window.open(`/api/client/${currentUUID}/pdf`, "_blank"); }
 
-function downloadCSV(){
-    window.open(`/api/client/${currentUUID}/csv`, "_blank");
-}
-
-// ----------------------------
-// DELETE CLIENT
-// ----------------------------
 async function deleteClient(){
     if(!confirm("Delete this client permanently?")) return;
-
-    const resp = await fetch(`${API_BASE}/client/${currentUUID}`, { method: "DELETE" });
+    const resp = await fetch(`${API_BASE}/client/${currentUUID}`, { method:"DELETE" });
     const result = await resp.json();
-
     if(result.status==="deleted"){
         alert("Client deleted.");
         window.location.href="/";
-    } else {
-        alert("Delete failed.");
-    }
+    } else alert("Delete failed.");
 }
 
-// ----------------------------
 checkRoute();
 </script>
 </body>
