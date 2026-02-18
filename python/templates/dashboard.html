@@ -571,187 +571,93 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Client Dashboard</title>
 <style>
-    body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        margin: 0;
-        background: #f4f6f9;
-        color: #333;
-    }
-    header {
-        background: #2a3f54;
-        color: white;
-        padding: 15px 20px;
-        text-align: center;
-        font-size: 24px;
-        font-weight: bold;
-    }
-    .container {
-        width: 95%;
-        max-width: 1200px;
-        margin: 20px auto;
-    }
-    .client-card {
-        background: white;
-        border-radius: 8px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-        padding: 20px;
-        display: flex;
-        flex-direction: column;
-    }
-    .client-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .status {
-        font-weight: bold;
-        padding: 4px 10px;
-        border-radius: 12px;
-        color: white;
-    }
-    .status.Online { background: #28a745; }
-    .status.Offline { background: #dc3545; }
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 15px;
-    }
-    th, td {
-        text-align: left;
-        padding: 8px;
-        border-bottom: 1px solid #ddd;
-    }
-    th {
-        background: #2a3f54;
-        color: white;
-    }
-    button {
-        cursor: pointer;
-        padding: 6px 12px;
-        border: none;
-        border-radius: 5px;
-        margin: 2px;
-        background: #2a3f54;
-        color: white;
-        transition: 0.2s;
-    }
-    button:hover { background: #1c2a38; }
-    .history-row {
-        background: #f1f1f1;
-        font-size: 14px;
-    }
-    .history-table {
-        margin-top: 10px;
-        display: none;
-    }
+body { font-family: Arial, sans-serif; margin:0; background:#f4f4f4; }
+header { background:#1e3a8a; color:white; padding:15px; text-align:center; }
+table { width:100%; border-collapse: collapse; margin-top:20px; background:white; }
+th, td { padding:10px; border:1px solid #ccc; text-align:left; }
+th { background:#1e3a8a; color:white; }
+.status-online { color:green; font-weight:bold; }
+.status-offline { color:red; font-weight:bold; }
+button { padding:5px 10px; cursor:pointer; border:none; border-radius:4px; background:#1e3a8a; color:white; }
+.modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); }
+.modal-content { background:white; margin:10% auto; padding:20px; width:70%; border-radius:6px; max-height:70%; overflow-y:auto; }
+.close { float:right; cursor:pointer; font-size:20px; }
 </style>
 </head>
 <body>
+<header><h1>Client Dashboard</h1></header>
+<table id="clientsTable">
+<thead>
+<tr>
+<th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th>Actions</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
 
-<header>Client Dashboard</header>
-<div class="container" id="clients-container">
-    <!-- Client cards will be inserted here -->
+<div class="modal" id="historyModal">
+<div class="modal-content">
+<span class="close" onclick="closeModal()">&times;</span>
+<h3>App History</h3>
+<table id="historyTable">
+<thead><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th></tr></thead>
+<tbody></tbody>
+</table>
+</div>
 </div>
 
 <script>
-async function fetchClients() {
+async function loadClients() {
     const res = await fetch("/api/clients");
     const clients = await res.json();
-    const container = document.getElementById("clients-container");
-    container.innerHTML = "";
-
-    for (const client of clients) {
-        const card = document.createElement("div");
-        card.className = "client-card";
-
-        const headerDiv = document.createElement("div");
-        headerDiv.className = "client-header";
-
-        headerDiv.innerHTML = `
-            <div>
-                <b>${client.hostname}</b> (${client.ip || "Unknown"}) <br>
-                MAC: ${client.mac}
-            </div>
-            <div>
-                <span class="status ${client.status}">${client.status}</span>
-                <button onclick="viewClient('${client.uuid}')">View Apps</button>
-                <button onclick="downloadPDF('${client.uuid}')">Download PDF</button>
-            </div>
+    const tbody = document.querySelector("#clientsTable tbody");
+    tbody.innerHTML = "";
+    clients.forEach(c=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${c.hostname}</td>
+            <td>${c.ip}</td>
+            <td>${c.mac}</td>
+            <td>${c.last_seen}</td>
+            <td class="status-${c.status.toLowerCase()}">${c.status}</td>
+            <td>
+                <button onclick="viewHistory('${c.uuid}')">History</button>
+                <button onclick="downloadPDF('${c.uuid}')">PDF</button>
+            </td>
         `;
-
-        card.appendChild(headerDiv);
-        container.appendChild(card);
-    }
-}
-
-async function viewClient(uuid) {
-    const res = await fetch(`/api/client/${uuid}`);
-    const client = await res.json();
-
-    let cardHTML = `<h3>Installed Apps</h3>`;
-    cardHTML += `<table>
-        <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th><th>History</th></tr>`;
-
-    client.apps.forEach(app => {
-        const sizeMb = (parseInt(app.size_bytes || 0) / (1024*1024)).toFixed(2);
-        const safeName = encodeURIComponent(app.name);
-        cardHTML += `
-            <tr>
-                <td>${app.name}</td>
-                <td>${app.version}</td>
-                <td>${app.install_date}</td>
-                <td>${sizeMb}</td>
-                <td><button onclick="viewHistory('${uuid}','${safeName}', this)">History</button></td>
-            </tr>
-            <tr class="history-row"><td colspan="5">
-                <table class="history-table"></table>
-            </td></tr>
-        `;
+        tbody.appendChild(tr);
     });
-
-    const card = document.querySelector(`.client-card button[onclick="viewClient('${uuid}')"]`).parentNode.parentNode;
-    card.innerHTML += cardHTML;
 }
 
-async function downloadPDF(uuid) {
-    window.open(`/api/client/${uuid}/pdf`, "_blank");
-}
-
-async function viewHistory(uuid, app, btn) {
-    const row = btn.closest("tr").nextElementSibling;
-    const table = row.querySelector(".history-table");
-
-    if (table.style.display === "block") {
-        table.style.display = "none";
-        return;
-    }
-
-    const res = await fetch(`/api/client/${uuid}/history?app=${app}`);
-    const history = await res.json();
-
-    let html = "<tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr>";
-    history.forEach(h => {
-        const sizeMb = (parseInt(h.size_bytes || 0)/(1024*1024)).toFixed(2);
-        html += `<tr>
-            <td>${h.timestamp}</td>
-            <td>${h.version}</td>
-            <td>${h.install_date}</td>
-            <td>${sizeMb}</td>
-        </tr>`;
+async function viewHistory(uuid){
+    const appName = prompt("Enter app name to view history:");
+    if(!appName) return;
+    const res = await fetch(`/api/client/${uuid}/history?app=${encodeURIComponent(appName)}`);
+    if(res.status!==200){ alert("No history found."); return; }
+    const data = await res.json();
+    const tbody = document.querySelector("#historyTable tbody");
+    tbody.innerHTML = "";
+    data.forEach(d=>{
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${d.timestamp}</td><td>${d.version}</td><td>${d.install_date}</td><td>${d.size_bytes}</td>`;
+        tbody.appendChild(tr);
     });
-    table.innerHTML = html;
-    table.style.display = "block";
+    document.getElementById("historyModal").style.display="block";
 }
 
-// Initial load
-fetchClients();
-setInterval(fetchClients, 10000); // refresh every 10s
+function closeModal(){
+    document.getElementById("historyModal").style.display="none";
+}
+
+function downloadPDF(uuid){
+    window.open(`/api/client/${uuid}/pdf`,"_blank");
+}
+
+loadClients();
+setInterval(loadClients, 15000); // refresh every 15s
 </script>
-
 </body>
 </html>
 
