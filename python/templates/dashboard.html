@@ -575,173 +575,183 @@
 <title>Client Dashboard</title>
 <style>
     body {
-        font-family: Arial, sans-serif;
-        background: #f4f4f4;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         margin: 0;
-        padding: 0;
+        background: #f4f6f9;
+        color: #333;
     }
     header {
-        background: #34495e;
-        color: #fff;
+        background: #2a3f54;
+        color: white;
         padding: 15px 20px;
-        font-size: 1.5em;
+        text-align: center;
+        font-size: 24px;
+        font-weight: bold;
     }
-    main {
+    .container {
+        width: 95%;
+        max-width: 1200px;
+        margin: 20px auto;
+    }
+    .client-card {
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
         padding: 20px;
+        display: flex;
+        flex-direction: column;
     }
+    .client-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .status {
+        font-weight: bold;
+        padding: 4px 10px;
+        border-radius: 12px;
+        color: white;
+    }
+    .status.Online { background: #28a745; }
+    .status.Offline { background: #dc3545; }
     table {
         width: 100%;
         border-collapse: collapse;
-        margin-bottom: 30px;
-        background: #fff;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        margin-top: 15px;
     }
     th, td {
-        padding: 10px;
         text-align: left;
+        padding: 8px;
         border-bottom: 1px solid #ddd;
     }
     th {
-        background: #2c3e50;
-        color: #fff;
-    }
-    tr:hover {
-        background: #ecf0f1;
+        background: #2a3f54;
+        color: white;
     }
     button {
-        padding: 5px 10px;
-        border: none;
-        background: #2980b9;
-        color: #fff;
         cursor: pointer;
-        border-radius: 4px;
-    }
-    button:hover {
-        background: #3498db;
-    }
-    .app-history {
-        display: none;
-        margin-top: 10px;
-        background: #ecf0f1;
-        padding: 10px;
+        padding: 6px 12px;
+        border: none;
         border-radius: 5px;
+        margin: 2px;
+        background: #2a3f54;
+        color: white;
+        transition: 0.2s;
     }
-    .app-history h4 {
-        margin: 0 0 10px 0;
+    button:hover { background: #1c2a38; }
+    .history-row {
+        background: #f1f1f1;
+        font-size: 14px;
     }
-    .status-online {
-        color: green;
-        font-weight: bold;
-    }
-    .status-offline {
-        color: red;
-        font-weight: bold;
+    .history-table {
+        margin-top: 10px;
+        display: none;
     }
 </style>
 </head>
 <body>
+
 <header>Client Dashboard</header>
-<main>
-    <table id="clients-table">
-        <thead>
-            <tr>
-                <th>Hostname</th>
-                <th>IP</th>
-                <th>MAC</th>
-                <th>Last Seen</th>
-                <th>Status</th>
-                <th>Apps</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-</main>
+<div class="container" id="clients-container">
+    <!-- Client cards will be inserted here -->
+</div>
 
 <script>
-// Fetch clients and populate table
-async function loadClients() {
+async function fetchClients() {
     const res = await fetch("/api/clients");
     const clients = await res.json();
-    const tbody = document.querySelector("#clients-table tbody");
-    tbody.innerHTML = "";
-
-    for (const client of clients) {
-        const tr = document.createElement("tr");
-
-        tr.innerHTML = `
-            <td>${client.hostname}</td>
-            <td>${client.ip}</td>
-            <td>${client.mac}</td>
-            <td>${client.last_seen}</td>
-            <td class="${client.status==="Online" ? "status-online" : "status-offline"}">${client.status}</td>
-            <td>
-                <button onclick="loadApps('${client.uuid}', this)">Show Apps</button>
-                <div class="app-history"></div>
-            </td>
-            <td>
-                <button onclick="downloadPDF('${client.uuid}')">Export PDF</button>
-            </td>
-        `;
-        tbody.appendChild(tr);
-    }
-}
-
-async function loadApps(uuid, btn) {
-    const res = await fetch(`/api/client/${uuid}`);
-    const client = await res.json();
-    const container = btn.nextElementSibling;
+    const container = document.getElementById("clients-container");
     container.innerHTML = "";
 
-    if (!client.apps || client.apps.length === 0) {
-        container.innerHTML = "<i>No apps installed</i>";
-        container.style.display = "block";
-        return;
-    }
+    for (const client of clients) {
+        const card = document.createElement("div");
+        card.className = "client-card";
 
-    for (const app of client.apps) {
-        const appDiv = document.createElement("div");
-        appDiv.style.marginBottom = "5px";
-        appDiv.innerHTML = `
-            <b>${app.name}</b> - ${app.version} - ${app.install_date || "Unknown"}
-            <button onclick="loadAppHistory('${uuid}','${encodeURIComponent(app.name)}', this)">History</button>
-            <div class="app-history"></div>
+        const headerDiv = document.createElement("div");
+        headerDiv.className = "client-header";
+
+        headerDiv.innerHTML = `
+            <div>
+                <b>${client.hostname}</b> (${client.ip || "Unknown"}) <br>
+                MAC: ${client.mac}
+            </div>
+            <div>
+                <span class="status ${client.status}">${client.status}</span>
+                <button onclick="viewClient('${client.uuid}')">View Apps</button>
+                <button onclick="downloadPDF('${client.uuid}')">Download PDF</button>
+            </div>
         `;
-        container.appendChild(appDiv);
+
+        card.appendChild(headerDiv);
+        container.appendChild(card);
     }
-    container.style.display = "block";
 }
 
-async function loadAppHistory(uuid, appName, btn) {
-    const div = btn.nextElementSibling;
-    div.innerHTML = "Loading...";
-    div.style.display = "block";
+async function viewClient(uuid) {
+    const res = await fetch(`/api/client/${uuid}`);
+    const client = await res.json();
 
-    const res = await fetch(`/api/client/${uuid}/history?app=${encodeURIComponent(appName)}`);
-    if (!res.ok) {
-        div.innerHTML = "<i>No history found</i>";
-        return;
-    }
-    const history = await res.json();
-    let html = `<h4>History for ${appName}</h4>`;
-    html += "<ul>";
-    for (const h of history) {
-        for (const a of h.apps) {
-            html += `<li>${h.timestamp} - Version: ${a.version || "N/A"} - Installed: ${a.install_date || "N/A"}</li>`;
-        }
-    }
-    html += "</ul>";
-    div.innerHTML = html;
+    let cardHTML = `<h3>Installed Apps</h3>`;
+    cardHTML += `<table>
+        <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th><th>History</th></tr>`;
+
+    client.apps.forEach(app => {
+        const sizeMb = (parseInt(app.size_bytes || 0) / (1024*1024)).toFixed(2);
+        const safeName = encodeURIComponent(app.name);
+        cardHTML += `
+            <tr>
+                <td>${app.name}</td>
+                <td>${app.version}</td>
+                <td>${app.install_date}</td>
+                <td>${sizeMb}</td>
+                <td><button onclick="viewHistory('${uuid}','${safeName}', this)">History</button></td>
+            </tr>
+            <tr class="history-row"><td colspan="5">
+                <table class="history-table"></table>
+            </td></tr>
+        `;
+    });
+
+    const card = document.querySelector(`.client-card button[onclick="viewClient('${uuid}')"]`).parentNode.parentNode;
+    card.innerHTML += cardHTML;
 }
 
-function downloadPDF(uuid) {
+async function downloadPDF(uuid) {
     window.open(`/api/client/${uuid}/pdf`, "_blank");
 }
 
+async function viewHistory(uuid, app, btn) {
+    const row = btn.closest("tr").nextElementSibling;
+    const table = row.querySelector(".history-table");
+
+    if (table.style.display === "block") {
+        table.style.display = "none";
+        return;
+    }
+
+    const res = await fetch(`/api/client/${uuid}/history?app=${app}`);
+    const history = await res.json();
+
+    let html = "<tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr>";
+    history.forEach(h => {
+        const sizeMb = (parseInt(h.size_bytes || 0)/(1024*1024)).toFixed(2);
+        html += `<tr>
+            <td>${h.timestamp}</td>
+            <td>${h.version}</td>
+            <td>${h.install_date}</td>
+            <td>${sizeMb}</td>
+        </tr>`;
+    });
+    table.innerHTML = html;
+    table.style.display = "block";
+}
+
 // Initial load
-loadClients();
-setInterval(loadClients, 10000); // refresh every 10s
+fetchClients();
+setInterval(fetchClients, 10000); // refresh every 10s
 </script>
+
 </body>
 </html>
 
