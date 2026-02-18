@@ -1617,23 +1617,304 @@
 
 
 
+# import os
+# import json
+# import datetime
+# import psycopg2
+# from flask import Flask, jsonify, render_template, request, Response
+# from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+# from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.lib import colors
+# from reportlab.lib.pagesizes import A4
+# import tempfile
+
+# DATABASE_URL = os.environ.get("DATABASE_URL")
+
+# app = Flask(__name__, template_folder="templates")
+
+# # ================= DATABASE =================
+
+# def get_db():
+#     return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+# def init_db():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#         CREATE TABLE IF NOT EXISTS clients (
+#             client_uuid TEXT PRIMARY KEY,
+#             mac_address TEXT,
+#             hostname TEXT,
+#             last_seen TIMESTAMP,
+#             ip TEXT,
+#             hardware JSONB,
+#             apps JSONB
+#         )
+#     """)
+#     con.commit()
+#     con.close()
+
+# if DATABASE_URL:
+#     init_db()
+
+# # ================= HELPERS =================
+
+# OFFLINE_SECONDS = 30  # 🔥 30 seconds timeout
+
+# def status_from_last_seen(ts):
+#     if not ts:
+#         return "Offline"
+#     diff = (datetime.datetime.utcnow() - ts).total_seconds()
+#     return "Online" if diff <= OFFLINE_SECONDS else "Offline"
+
+# def safe_json(v):
+#     try:
+#         if isinstance(v, (dict, list)):
+#             return v
+#         return json.loads(v)
+#     except:
+#         return {}
+
+# # ================= ROUTES =================
+
+# @app.route("/")
+# def dashboard():
+#     return render_template("dashboard.html")
+
+# @app.route("/client/<uuid>")
+# def client_page(uuid):
+#     return render_template("dashboard.html")
+
+# # ================= API =================
+
+# @app.route("/api/report", methods=["POST"])
+# def api_report():
+#     data = request.json
+
+#     hardware = json.dumps(data.get("hardware", {}))
+#     apps = json.dumps(data.get("apps", []))
+
+#     con = get_db()
+#     cur = con.cursor()
+
+#     cur.execute("""
+#         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
+#         VALUES (%s,%s,%s,%s,%s,%s,%s)
+#         ON CONFLICT (client_uuid) DO UPDATE SET
+#             mac_address=EXCLUDED.mac_address,
+#             hostname=EXCLUDED.hostname,
+#             last_seen=EXCLUDED.last_seen,
+#             ip=EXCLUDED.ip,
+#             hardware=EXCLUDED.hardware,
+#             apps=EXCLUDED.apps
+#     """, (
+#         data.get("uuid"),
+#         data.get("mac"),
+#         data.get("hostname"),
+#         datetime.datetime.utcnow(),  # 🔥 SERVER TIME
+#         data.get("hardware", {}).get("IP Address"),
+#         hardware,
+#         apps
+#     ))
+
+#     con.commit()
+#     con.close()
+
+#     return jsonify({"status": "ok"})
+
+
+# @app.route("/api/clients")
+# def api_clients():
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients ORDER BY last_seen DESC")
+#     rows = cur.fetchall()
+#     con.close()
+
+#     result = []
+#     for r in rows:
+#         result.append({
+#             "uuid": r[0],
+#             "hostname": r[1],
+#             "ip": r[2],
+#             "mac": r[3],
+#             "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+#             "status": status_from_last_seen(r[4])
+#         })
+
+#     return jsonify(result)
+
+
+# @app.route("/api/client/<uuid>")
+# def api_client(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#         SELECT client_uuid, hostname, ip, mac_address,
+#                last_seen, hardware, apps
+#         FROM clients WHERE client_uuid=%s
+#     """, (uuid,))
+#     r = cur.fetchone()
+#     con.close()
+
+#     if not r:
+#         return jsonify({"error": "Client not found"}), 404
+
+#     return jsonify({
+#         "uuid": r[0],
+#         "hostname": r[1],
+#         "ip": r[2],
+#         "mac": r[3],
+#         "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+#         "status": status_from_last_seen(r[4]),
+#         "hardware": safe_json(r[5]),
+#         "apps": safe_json(r[6])
+#     })
+
+
+# @app.route("/api/client/<uuid>", methods=["DELETE"])
+# def delete_client(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+#     con.commit()
+#     con.close()
+#     return jsonify({"status": "deleted"})
+
+
+# @app.route("/api/client/<uuid>/pdf")
+# def download_pdf(uuid):
+#     con = get_db()
+#     cur = con.cursor()
+#     cur.execute("""
+#         SELECT hostname, ip, mac_address, hardware, apps
+#         FROM clients WHERE client_uuid=%s
+#     """, (uuid,))
+#     r = cur.fetchone()
+#     con.close()
+
+#     if not r:
+#         return "Not found", 404
+
+#     hardware = safe_json(r[3])
+#     apps = safe_json(r[4])
+
+#     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+#     doc = SimpleDocTemplate(temp.name, pagesize=A4)
+#     elements = []
+#     styles = getSampleStyleSheet()
+
+#     elements.append(Paragraph("Client System Report", styles["Title"]))
+#     elements.append(Spacer(1, 15))
+
+#     elements.append(Paragraph(f"<b>Hostname:</b> {r[0]}", styles["Normal"]))
+#     elements.append(Paragraph(f"<b>IP:</b> {r[1]}", styles["Normal"]))
+#     elements.append(Paragraph(f"<b>MAC:</b> {r[2]}", styles["Normal"]))
+#     elements.append(Spacer(1, 20))
+
+#     # Hardware
+#     hw_data = [["Key", "Value"]]
+#     for k, v in hardware.items():
+#         if k != "Disks":
+#             hw_data.append([str(k), str(v)])
+
+#     hw_table = Table(hw_data, repeatRows=1)
+#     hw_table.setStyle(TableStyle([
+#         ('BACKGROUND',(0,0),(-1,0),colors.grey),
+#         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+#         ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+#     ]))
+
+#     elements.append(hw_table)
+#     elements.append(Spacer(1, 20))
+
+#     # Disks
+#     disks = hardware.get("Disks", [])
+#     if disks:
+#         disk_data = [["Drive", "Total (GB)", "Used (GB)", "Free (GB)"]]
+#         for d in disks:
+#             disk_data.append([
+#                 d.get("Device") or d.get("Mountpoint"),
+#                 str(d.get("Total (GB)", "")),
+#                 str(d.get("Used (GB)", "")),
+#                 str(d.get("Free (GB)", ""))
+#             ])
+
+#         disk_table = Table(disk_data, repeatRows=1)
+#         disk_table.setStyle(TableStyle([
+#             ('BACKGROUND',(0,0),(-1,0),colors.grey),
+#             ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+#             ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+#         ]))
+
+#         elements.append(disk_table)
+#         elements.append(Spacer(1, 20))
+
+#     # Apps
+#     apps_data = [["Name", "Version", "Install Date", "Size (MB)"]]
+#     for a in apps:
+#         size_mb = round(a.get("size_bytes", 0) / (1024*1024), 2)
+#         apps_data.append([
+#             a.get("name",""),
+#             a.get("version",""),
+#             a.get("install_date",""),
+#             str(size_mb)
+#         ])
+
+#     apps_table = Table(apps_data, repeatRows=1)
+#     apps_table.setStyle(TableStyle([
+#         ('BACKGROUND',(0,0),(-1,0),colors.grey),
+#         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+#         ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+#     ]))
+
+#     elements.append(apps_table)
+
+#     doc.build(elements)
+
+#     return Response(open(temp.name,"rb"),
+#                     mimetype="application/pdf",
+#                     headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
+
+
+# # ================= RUN =================
+
+# if __name__ == "__main__":
+#     port = int(os.environ.get("PORT", 5000))
+#     app.run(host="0.0.0.0", port=port)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 import os
 import json
 import datetime
 import psycopg2
-from flask import Flask, jsonify, render_template, request, Response
+from flask import Flask, jsonify, render_template, request, send_file
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 import tempfile
 
+# ---------------- CONFIG ----------------
 DATABASE_URL = os.environ.get("DATABASE_URL")
+OFFLINE_SECONDS = 30  # 30 seconds timeout
 
 app = Flask(__name__, template_folder="templates")
 
-# ================= DATABASE =================
-
+# ---------------- DATABASE ----------------
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require")
 
@@ -1657,10 +1938,7 @@ def init_db():
 if DATABASE_URL:
     init_db()
 
-# ================= HELPERS =================
-
-OFFLINE_SECONDS = 30  # 🔥 30 seconds timeout
-
+# ---------------- HELPERS ----------------
 def status_from_last_seen(ts):
     if not ts:
         return "Offline"
@@ -1675,8 +1953,7 @@ def safe_json(v):
     except:
         return {}
 
-# ================= ROUTES =================
-
+# ---------------- ROUTES ----------------
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
@@ -1685,18 +1962,15 @@ def dashboard():
 def client_page(uuid):
     return render_template("dashboard.html")
 
-# ================= API =================
-
+# ---------------- API ----------------
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
-
     hardware = json.dumps(data.get("hardware", {}))
     apps = json.dumps(data.get("apps", []))
 
     con = get_db()
     cur = con.cursor()
-
     cur.execute("""
         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
@@ -1711,17 +1985,14 @@ def api_report():
         data.get("uuid"),
         data.get("mac"),
         data.get("hostname"),
-        datetime.datetime.utcnow(),  # 🔥 SERVER TIME
+        datetime.datetime.utcnow(),  # server time
         data.get("hardware", {}).get("IP Address"),
         hardware,
         apps
     ))
-
     con.commit()
     con.close()
-
     return jsonify({"status": "ok"})
-
 
 @app.route("/api/clients")
 def api_clients():
@@ -1741,9 +2012,7 @@ def api_clients():
             "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
             "status": status_from_last_seen(r[4])
         })
-
     return jsonify(result)
-
 
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
@@ -1771,7 +2040,6 @@ def api_client(uuid):
         "apps": safe_json(r[6])
     })
 
-
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
     con = get_db()
@@ -1781,7 +2049,7 @@ def delete_client(uuid):
     con.close()
     return jsonify({"status": "deleted"})
 
-
+# ---------------- PDF EXPORT ----------------
 @app.route("/api/client/<uuid>/pdf")
 def download_pdf(uuid):
     con = get_db()
@@ -1804,9 +2072,9 @@ def download_pdf(uuid):
     elements = []
     styles = getSampleStyleSheet()
 
+    # Title
     elements.append(Paragraph("Client System Report", styles["Title"]))
     elements.append(Spacer(1, 15))
-
     elements.append(Paragraph(f"<b>Hostname:</b> {r[0]}", styles["Normal"]))
     elements.append(Paragraph(f"<b>IP:</b> {r[1]}", styles["Normal"]))
     elements.append(Paragraph(f"<b>MAC:</b> {r[2]}", styles["Normal"]))
@@ -1817,16 +2085,14 @@ def download_pdf(uuid):
     for k, v in hardware.items():
         if k != "Disks":
             hw_data.append([str(k), str(v)])
-
     hw_table = Table(hw_data, repeatRows=1)
     hw_table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.grey),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
         ('GRID',(0,0),(-1,-1),0.5,colors.grey),
     ]))
-
     elements.append(hw_table)
-    elements.append(Spacer(1, 20))
+    elements.append(Spacer(1, 15))
 
     # Disks
     disks = hardware.get("Disks", [])
@@ -1839,16 +2105,14 @@ def download_pdf(uuid):
                 str(d.get("Used (GB)", "")),
                 str(d.get("Free (GB)", ""))
             ])
-
         disk_table = Table(disk_data, repeatRows=1)
         disk_table.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0),colors.grey),
             ('TEXTCOLOR',(0,0),(-1,0),colors.white),
             ('GRID',(0,0),(-1,-1),0.5,colors.grey),
         ]))
-
         elements.append(disk_table)
-        elements.append(Spacer(1, 20))
+        elements.append(Spacer(1, 15))
 
     # Apps
     apps_data = [["Name", "Version", "Install Date", "Size (MB)"]]
@@ -1860,30 +2124,21 @@ def download_pdf(uuid):
             a.get("install_date",""),
             str(size_mb)
         ])
-
     apps_table = Table(apps_data, repeatRows=1)
     apps_table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.grey),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
         ('GRID',(0,0),(-1,-1),0.5,colors.grey),
     ]))
-
     elements.append(apps_table)
 
     doc.build(elements)
+    temp.close()
 
-    return Response(open(temp.name,"rb"),
-                    mimetype="application/pdf",
-                    headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
+    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.pdf", mimetype="application/pdf")
 
-
-# ================= RUN =================
-
+# ---------------- RUN ----------------
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-
-
-
-
 
