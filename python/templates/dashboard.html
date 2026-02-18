@@ -573,29 +573,12 @@
 <meta charset="UTF-8">
 <title>Client Monitoring Dashboard</title>
 <style>
-body {
-    margin:0;
-    font-family:"Segoe UI",Arial,sans-serif;
-    background:#f0f2f5;
-    color:#333;
-}
+body { margin:0; font-family:"Segoe UI",Arial,sans-serif; background:#f0f2f5; color:#333; }
 .dark { background:#121212; color:#eee; }
-header {
-    background:#1f2937;
-    color:white;
-    padding:15px 30px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-}
+header { background:#1f2937; color:white; padding:15px 30px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
 header h2 {margin:0; font-weight:600; font-size:1.6em;}
 .container { padding:30px; max-width:1200px; margin:auto; }
-.card {
-    background:white; padding:20px; border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08); margin-bottom:25px;
-    transition: transform 0.2s;
-}
+.card { background:white; padding:20px; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,0.08); margin-bottom:25px; transition: transform 0.2s; }
 .card:hover { transform: translateY(-2px); }
 .dark .card { background:#1e1e1e; }
 table { width:100%; border-collapse:collapse; font-size:14px; }
@@ -605,36 +588,23 @@ th { background:#2563eb; color:white; font-weight:600; }
 tr:nth-child(even){ background:#f9fafb; }
 .dark tr:nth-child(even){ background:#2c2c2c; }
 tr:hover { background:#e0e7ff; } .dark tr:hover{ background:#444; }
-button {
-    padding:6px 14px; border:none; border-radius:6px; cursor:pointer;
-    font-size:13px; font-weight:500; transition:0.2s;
-} button:hover{opacity:0.85;}
+button { padding:6px 14px; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; transition:0.2s; } 
+button:hover{opacity:0.85;}
 .btn-view{background:#2563eb;color:white;}
 .btn-delete{background:#dc2626;color:white;}
 .btn-refresh{background:#10b981;color:white;}
 .btn-back{background:#6b7280;color:white;}
 .btn-pdf{background:#9333ea;color:white;}
-.search-box{
-    margin-bottom:15px; padding:10px; width:100%; max-width:350px;
-    border-radius:8px; border:1px solid #ccc; font-size:14px;
-}
+.search-box{ margin-bottom:15px; padding:10px; width:100%; max-width:350px; border-radius:8px; border:1px solid #ccc; font-size:14px; }
 .dark .search-box{ background:#333; color:white; border:1px solid #555; }
 .status-online{color:#16a34a;font-weight:bold;}
 .status-offline{color:#dc2626;font-weight:bold;}
-.section-title{
-    font-weight:bold; font-size:16px;
-    margin-top:20px; margin-bottom:10px;
-    border-bottom:1px solid #ccc; padding-bottom:5px;
-}
+.section-title{ font-weight:bold; font-size:16px; margin-top:20px; margin-bottom:10px; border-bottom:1px solid #ccc; padding-bottom:5px; }
 .dark .section-title{ border-color:#555; }
-@media(max-width:768px){
-    table, th, td { font-size:12px; }
-    header { flex-direction:column; gap:10px; }
-}
+@media(max-width:768px){ table, th, td { font-size:12px; } header { flex-direction:column; gap:10px; } }
 </style>
 </head>
 <body>
-
 <header>
 <h2>Client Monitoring Dashboard</h2>
 <div>
