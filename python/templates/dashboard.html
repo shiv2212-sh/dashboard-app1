@@ -571,92 +571,167 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Client Dashboard</title>
 <style>
-body { font-family: Arial, sans-serif; margin:0; background:#f4f4f4; }
-header { background:#1e3a8a; color:white; padding:15px; text-align:center; }
-table { width:100%; border-collapse: collapse; margin-top:20px; background:white; }
-th, td { padding:10px; border:1px solid #ccc; text-align:left; }
-th { background:#1e3a8a; color:white; }
-.status-online { color:green; font-weight:bold; }
-.status-offline { color:red; font-weight:bold; }
-button { padding:5px 10px; cursor:pointer; border:none; border-radius:4px; background:#1e3a8a; color:white; }
-.modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); }
-.modal-content { background:white; margin:10% auto; padding:20px; width:70%; border-radius:6px; max-height:70%; overflow-y:auto; }
-.close { float:right; cursor:pointer; font-size:20px; }
+  body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f5f5f5; color:#333; }
+  body.dark { background:#121212; color:#ddd; }
+  header { padding:10px 20px; background:#007bff; color:white; display:flex; justify-content:space-between; align-items:center; }
+  header h1 { margin:0; font-size:24px; }
+  .toggle-btn { cursor:pointer; padding:5px 10px; background:#fff; color:#007bff; border-radius:5px; border:none; }
+  .container { padding:20px; }
+  input, select { padding:5px; margin-right:10px; }
+  table { width:100%; border-collapse:collapse; margin-top:20px; }
+  th, td { padding:10px; border:1px solid #ccc; text-align:left; }
+  th { background:#007bff; color:white; }
+  body.dark th { background:#1a73e8; }
+  tr:nth-child(even) { background:#f2f2f2; }
+  body.dark tr:nth-child(even) { background:#1e1e1e; }
+  button { cursor:pointer; padding:5px 10px; margin-right:5px; }
+  .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); justify-content:center; align-items:center; }
+  .modal-content { background:#fff; padding:20px; border-radius:8px; width:90%; max-width:800px; max-height:80%; overflow-y:auto; }
+  body.dark .modal-content { background:#1e1e1e; color:#ddd; }
+  .close { float:right; cursor:pointer; font-weight:bold; }
 </style>
 </head>
 <body>
-<header><h1>Client Dashboard</h1></header>
-<table id="clientsTable">
-<thead>
-<tr>
-<th>Hostname</th><th>IP</th><th>MAC</th><th>Last Seen</th><th>Status</th><th>Actions</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+<header>
+  <h1>Client Dashboard</h1>
+  <div>
+    <button class="toggle-btn" onclick="toggleDark()">Toggle Dark Mode</button>
+    <input type="text" id="searchInput" placeholder="Search hostname or IP..." onkeyup="filterTable()">
+    <select id="statusFilter" onchange="filterTable()">
+      <option value="">All Status</option>
+      <option value="Online">Online</option>
+      <option value="Offline">Offline</option>
+    </select>
+  </div>
+</header>
+
+<div class="container">
+  <table id="clientsTable">
+    <thead>
+      <tr>
+        <th>Hostname</th>
+        <th>IP</th>
+        <th>MAC</th>
+        <th>Last Seen</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      <!-- Data populated dynamically -->
+    </tbody>
+  </table>
+</div>
 
 <div class="modal" id="historyModal">
-<div class="modal-content">
-<span class="close" onclick="closeModal()">&times;</span>
-<h3>App History</h3>
-<table id="historyTable">
-<thead><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th></tr></thead>
-<tbody></tbody>
-</table>
-</div>
+  <div class="modal-content">
+    <span class="close" onclick="closeModal()">&times;</span>
+    <h3>App History</h3>
+    <table id="historyTable">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Version</th>
+          <th>Install Date</th>
+          <th>Size (MB)</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 </div>
 
 <script>
-async function loadClients() {
-    const res = await fetch("/api/clients");
-    const clients = await res.json();
-    const tbody = document.querySelector("#clientsTable tbody");
-    tbody.innerHTML = "";
-    clients.forEach(c=>{
+let clients = [];
+let dark = false;
+
+function toggleDark() {
+  dark = !dark;
+  document.body.classList.toggle('dark', dark);
+}
+
+function fetchClients() {
+  fetch("/api/clients")
+    .then(res => res.json())
+    .then(data => {
+      clients = data;
+      renderTable();
+    });
+}
+
+function renderTable() {
+  const tbody = document.querySelector("#clientsTable tbody");
+  tbody.innerHTML = "";
+  clients.forEach(c => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${c.hostname}</td>
+      <td>${c.ip}</td>
+      <td>${c.mac}</td>
+      <td>${c.last_seen}</td>
+      <td>${c.status}</td>
+      <td>
+        <button onclick="exportCSV('${c.uuid}')">CSV</button>
+        <button onclick="exportPDF('${c.uuid}')">PDF</button>
+        <button onclick="showHistory('${c.uuid}')">History</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+  filterTable();
+}
+
+function filterTable() {
+  const search = document.getElementById("searchInput").value.toLowerCase();
+  const status = document.getElementById("statusFilter").value;
+  const rows = document.querySelectorAll("#clientsTable tbody tr");
+  rows.forEach(row => {
+    const hostname = row.cells[0].textContent.toLowerCase();
+    const ip = row.cells[1].textContent.toLowerCase();
+    const rowStatus = row.cells[4].textContent;
+    const matchSearch = hostname.includes(search) || ip.includes(search);
+    const matchStatus = status === "" || rowStatus === status;
+    row.style.display = (matchSearch && matchStatus) ? "" : "none";
+  });
+}
+
+function exportCSV(uuid) {
+  window.open(`/api/client/${uuid}/csv`, "_blank");
+}
+
+function exportPDF(uuid) {
+  window.open(`/api/client/${uuid}/pdf`, "_blank");
+}
+
+function showHistory(uuid) {
+  const modal = document.getElementById("historyModal");
+  const tbody = document.querySelector("#historyTable tbody");
+  tbody.innerHTML = "";
+  fetch(`/api/client/${uuid}/history`)
+    .then(res => res.json())
+    .then(data => {
+      data.forEach(h => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
-            <td>${c.hostname}</td>
-            <td>${c.ip}</td>
-            <td>${c.mac}</td>
-            <td>${c.last_seen}</td>
-            <td class="status-${c.status.toLowerCase()}">${c.status}</td>
-            <td>
-                <button onclick="viewHistory('${c.uuid}')">History</button>
-                <button onclick="downloadPDF('${c.uuid}')">PDF</button>
-            </td>
+          <td>${h.timestamp}</td>
+          <td>${h.version}</td>
+          <td>${h.install_date}</td>
+          <td>${(h.size_bytes/1024/1024).toFixed(2)}</td>
         `;
         tbody.appendChild(tr);
+      });
+      modal.style.display = "flex";
     });
 }
 
-async function viewHistory(uuid){
-    const appName = prompt("Enter app name to view history:");
-    if(!appName) return;
-    const res = await fetch(`/api/client/${uuid}/history?app=${encodeURIComponent(appName)}`);
-    if(res.status!==200){ alert("No history found."); return; }
-    const data = await res.json();
-    const tbody = document.querySelector("#historyTable tbody");
-    tbody.innerHTML = "";
-    data.forEach(d=>{
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${d.timestamp}</td><td>${d.version}</td><td>${d.install_date}</td><td>${d.size_bytes}</td>`;
-        tbody.appendChild(tr);
-    });
-    document.getElementById("historyModal").style.display="block";
+function closeModal() {
+  document.getElementById("historyModal").style.display = "none";
 }
 
-function closeModal(){
-    document.getElementById("historyModal").style.display="none";
-}
-
-function downloadPDF(uuid){
-    window.open(`/api/client/${uuid}/pdf`,"_blank");
-}
-
-loadClients();
-setInterval(loadClients, 15000); // refresh every 15s
+window.onload = fetchClients;
 </script>
 </body>
 </html>
