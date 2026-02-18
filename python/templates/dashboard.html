@@ -574,91 +574,136 @@
     <meta charset="UTF-8">
     <style>
         body {
-            font-family: Arial, sans-serif;
-            background: #0f172a;
-            color: #fff;
             margin: 0;
-            padding: 20px;
+            font-family: 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f172a, #1e293b);
+            color: white;
         }
 
-        h1 { margin-bottom: 10px; }
+        .container {
+            padding: 40px;
+        }
+
+        h1 {
+            font-weight: 600;
+            margin-bottom: 30px;
+        }
+
+        .glass-card {
+            background: rgba(255,255,255,0.05);
+            backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+            margin-bottom: 25px;
+        }
 
         input {
-            padding: 8px;
-            width: 300px;
-            margin-bottom: 15px;
-            border-radius: 5px;
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
             border: none;
+            outline: none;
+            background: rgba(255,255,255,0.1);
+            color: white;
+            margin-bottom: 20px;
         }
 
         table {
             width: 100%;
             border-collapse: collapse;
-            background: #1e293b;
-            border-radius: 8px;
-            overflow: hidden;
         }
 
-        th, td {
-            padding: 12px;
+        th {
             text-align: left;
+            padding: 12px;
+            font-weight: 500;
+            opacity: 0.8;
         }
 
-        th { background: #334155; }
+        td {
+            padding: 12px;
+            border-top: 1px solid rgba(255,255,255,0.08);
+        }
 
-        tr:nth-child(even) { background: #1e293b; }
-        tr:nth-child(odd) { background: #273449; }
+        tr:hover {
+            background: rgba(255,255,255,0.05);
+            transition: 0.2s;
+        }
+
+        .status {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .online {
+            background: rgba(16,185,129,0.2);
+            color: #10b981;
+        }
+
+        .offline {
+            background: rgba(239,68,68,0.2);
+            color: #ef4444;
+        }
 
         button {
             padding: 6px 12px;
-            margin-right: 5px;
+            border-radius: 8px;
             border: none;
-            border-radius: 4px;
             cursor: pointer;
+            margin-right: 5px;
+            font-size: 12px;
         }
 
         .view-btn { background: #3b82f6; color: white; }
         .pdf-btn { background: #10b981; color: white; }
         .delete-btn { background: #ef4444; color: white; }
-        .back-btn { background: #64748b; color: white; margin-bottom: 15px; }
 
-        .online { color: #10b981; font-weight: bold; }
-        .offline { color: #ef4444; font-weight: bold; }
+        #clientDetail { display: none; }
 
-        #clientDetail {
-            display: none;
-            background: #1e293b;
-            padding: 20px;
-            border-radius: 8px;
+        .back-btn {
+            margin-bottom: 20px;
+            background: #64748b;
+            color: white;
         }
 
-        .section { margin-bottom: 20px; }
-
-        .card {
-            background: #273449;
-            padding: 15px;
-            border-radius: 6px;
+        .section-title {
+            margin-top: 30px;
             margin-bottom: 10px;
+            font-weight: 600;
+            font-size: 18px;
+        }
+
+        .hardware-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px,1fr));
+            gap: 15px;
+        }
+
+        .hardware-item {
+            background: rgba(255,255,255,0.06);
+            padding: 15px;
+            border-radius: 12px;
         }
     </style>
 </head>
 <body>
 
-<h1>Client Dashboard</h1>
+<div class="container">
 
-<!-- 🔎 DASHBOARD SEARCH -->
-<input type="text" id="dashboardSearch" placeholder="Search by UUID, Hostname, IP or Status..." onkeyup="filterClients()">
+<h1>Client Monitoring Dashboard</h1>
 
-<!-- CLIENT LIST -->
-<div id="clientList">
+<div id="clientList" class="glass-card">
+    <input type="text" id="dashboardSearch" placeholder="Search by UUID, Hostname, IP or Status..." onkeyup="filterClients()">
+
     <table>
         <thead>
             <tr>
                 <th>UUID</th>
                 <th>Hostname</th>
                 <th>IP</th>
-                <th>MAC</th>
-                <th>Last Seen</th>
                 <th>Status</th>
                 <th>Actions</th>
             </tr>
@@ -667,41 +712,35 @@
     </table>
 </div>
 
-<!-- CLIENT DETAIL -->
-<div id="clientDetail">
+<div id="clientDetail" class="glass-card">
+
     <button class="back-btn" onclick="goBack()">← Back</button>
 
     <h2 id="detailHostname"></h2>
 
-    <div class="section card">
-        <p><b>UUID:</b> <span id="detailUUID"></span></p>
-        <p><b>IP:</b> <span id="detailIP"></span></p>
-        <p><b>MAC:</b> <span id="detailMAC"></span></p>
-        <p><b>Last Seen:</b> <span id="detailLastSeen"></span></p>
-    </div>
+    <div class="section-title">System Info</div>
+    <div id="basicInfo"></div>
 
-    <div class="section">
-        <h3>Hardware Info</h3>
-        <div id="hardwareInfo"></div>
-    </div>
+    <div class="section-title">Hardware Information</div>
+    <div id="hardwareInfo" class="hardware-grid"></div>
 
-    <!-- 🔎 APP SEARCH BAR -->
     <input type="text" id="appSearch" placeholder="Search installed applications..." onkeyup="filterApps()">
 
-    <div class="section">
-        <h3>Installed Applications</h3>
-        <table>
-            <thead>
-                <tr>
-                    <th>Name</th>
-                    <th>Version</th>
-                    <th>Install Date</th>
-                    <th>Size (MB)</th>
-                </tr>
-            </thead>
-            <tbody id="appsTable"></tbody>
-        </table>
-    </div>
+    <div class="section-title">Installed Applications</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Version</th>
+                <th>Install Date</th>
+                <th>Size (MB)</th>
+            </tr>
+        </thead>
+        <tbody id="appsTable"></tbody>
+    </table>
+
+</div>
+
 </div>
 
 <script>
@@ -728,23 +767,23 @@ function renderClients(data) {
     table.innerHTML = "";
 
     data.forEach(client => {
-        const row = document.createElement("tr");
-
-        row.innerHTML = `
-            <td>${client.uuid}</td>
-            <td>${client.hostname}</td>
-            <td>${client.ip}</td>
-            <td>${client.mac}</td>
-            <td>${client.last_seen}</td>
-            <td class="${client.status === "Online" ? "online" : "offline"}">${client.status}</td>
-            <td>
-                <button class="view-btn" onclick="viewClient('${client.uuid}')">View</button>
-                <button class="pdf-btn" onclick="downloadPDF('${client.uuid}')">PDF</button>
-                <button class="delete-btn" onclick="deleteClient('${client.uuid}')">Delete</button>
-            </td>
+        table.innerHTML += `
+            <tr>
+                <td>${client.uuid}</td>
+                <td>${client.hostname}</td>
+                <td>${client.ip}</td>
+                <td>
+                    <span class="status ${client.status === "Online" ? "online" : "offline"}">
+                        ${client.status}
+                    </span>
+                </td>
+                <td>
+                    <button class="view-btn" onclick="viewClient('${client.uuid}')">View</button>
+                    <button class="pdf-btn" onclick="downloadPDF('${client.uuid}')">PDF</button>
+                    <button class="delete-btn" onclick="deleteClient('${client.uuid}')">Delete</button>
+                </td>
+            </tr>
         `;
-
-        table.appendChild(row);
     });
 }
 
@@ -752,10 +791,10 @@ function filterClients() {
     const search = document.getElementById("dashboardSearch").value.toLowerCase();
 
     const filtered = allClients.filter(c =>
-        c.uuid.toLowerCase().includes(search) ||
-        c.hostname.toLowerCase().includes(search) ||
-        c.ip.toLowerCase().includes(search) ||
-        c.status.toLowerCase().includes(search)
+        (c.uuid || "").toLowerCase().includes(search) ||
+        (c.hostname || "").toLowerCase().includes(search) ||
+        (c.ip || "").toLowerCase().includes(search) ||
+        (c.status || "").toLowerCase().includes(search)
     );
 
     renderClients(filtered);
@@ -767,20 +806,27 @@ function viewClient(uuid) {
         .then(client => {
 
             document.getElementById("clientList").style.display = "none";
-            document.getElementById("dashboardSearch").style.display = "none";
             document.getElementById("clientDetail").style.display = "block";
 
             document.getElementById("detailHostname").innerText = client.hostname;
-            document.getElementById("detailUUID").innerText = client.uuid;
-            document.getElementById("detailIP").innerText = client.ip;
-            document.getElementById("detailMAC").innerText = client.mac;
-            document.getElementById("detailLastSeen").innerText = client.last_seen;
+
+            document.getElementById("basicInfo").innerHTML = `
+                <p><b>UUID:</b> ${client.uuid}</p>
+                <p><b>IP:</b> ${client.ip}</p>
+                <p><b>MAC:</b> ${client.mac}</p>
+                <p><b>Last Seen:</b> ${client.last_seen}</p>
+            `;
 
             const hwDiv = document.getElementById("hardwareInfo");
             hwDiv.innerHTML = "";
+
             for (let key in client.hardware) {
                 if (key !== "Disks") {
-                    hwDiv.innerHTML += `<div class="card"><b>${key}:</b> ${client.hardware[key]}</div>`;
+                    hwDiv.innerHTML += `
+                        <div class="hardware-item">
+                            <b>${key}</b><br>${client.hardware[key]}
+                        </div>
+                    `;
                 }
             }
 
@@ -809,8 +855,8 @@ function filterApps() {
     const search = document.getElementById("appSearch").value.toLowerCase();
 
     const filtered = currentApps.filter(app =>
-        app.name.toLowerCase().includes(search) ||
-        app.version.toLowerCase().includes(search)
+        (app.name || "").toLowerCase().includes(search) ||
+        (app.version || "").toLowerCase().includes(search)
     );
 
     renderApps(filtered);
@@ -822,7 +868,6 @@ function downloadPDF(uuid) {
 
 function deleteClient(uuid) {
     if (!confirm("Delete this client?")) return;
-
     fetch(`/api/client/${uuid}`, { method: "DELETE" })
         .then(() => loadClients());
 }
@@ -830,7 +875,6 @@ function deleteClient(uuid) {
 function goBack() {
     document.getElementById("clientDetail").style.display = "none";
     document.getElementById("clientList").style.display = "block";
-    document.getElementById("dashboardSearch").style.display = "block";
 }
 
 loadClients();
@@ -839,3 +883,6 @@ loadClients();
 
 </body>
 </html>
+
+
+
