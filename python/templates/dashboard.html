@@ -572,7 +572,6 @@
 <head>
 <meta charset="UTF-8">
 <title>Client Monitoring Dashboard</title>
-
 <style>
 body {
     margin:0;
@@ -580,10 +579,7 @@ body {
     background:#f0f2f5;
     color:#333;
 }
-.dark {
-    background:#121212;
-    color:#eee;
-}
+.dark { background:#121212; color:#eee; }
 header {
     background:#1f2937;
     color:white;
@@ -594,105 +590,43 @@ header {
     box-shadow: 0 2px 5px rgba(0,0,0,0.2);
 }
 header h2 {margin:0; font-weight:600; font-size:1.6em;}
-
-.container {
-    padding:30px;
-    max-width:1200px;
-    margin:auto;
-}
-
+.container { padding:30px; max-width:1200px; margin:auto; }
 .card {
-    background:white;
-    padding:20px;
-    border-radius:12px;
-    box-shadow:0 6px 18px rgba(0,0,0,0.08);
-    margin-bottom:25px;
+    background:white; padding:20px; border-radius:12px;
+    box-shadow:0 6px 18px rgba(0,0,0,0.08); margin-bottom:25px;
     transition: transform 0.2s;
 }
-.card:hover {
-    transform: translateY(-2px);
-}
-.dark .card {
-    background:#1e1e1e;
-}
-
-table {
-    width:100%;
-    border-collapse:collapse;
-    font-size:14px;
-}
-th,td {
-    padding:12px 10px;
-    text-align:left;
-}
-th {
-    background:#2563eb;
-    color:white;
-    font-weight:600;
-}
-.dark th {
-    background:#3333ff;
-}
-tr:nth-child(even){
-    background:#f9fafb;
-}
-.dark tr:nth-child(even){
-    background:#2c2c2c;
-}
-tr:hover {
-    background:#e0e7ff;
-}
-.dark tr:hover {
-    background:#444;
-}
-
+.card:hover { transform: translateY(-2px); }
+.dark .card { background:#1e1e1e; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { padding:12px 10px; text-align:left; }
+th { background:#2563eb; color:white; font-weight:600; }
+.dark th { background:#3333ff; }
+tr:nth-child(even){ background:#f9fafb; }
+.dark tr:nth-child(even){ background:#2c2c2c; }
+tr:hover { background:#e0e7ff; } .dark tr:hover{ background:#444; }
 button {
-    padding:6px 14px;
-    border:none;
-    border-radius:6px;
-    cursor:pointer;
-    font-size:13px;
-    font-weight:500;
-    transition:0.2s;
-}
-button:hover {opacity:0.85;}
+    padding:6px 14px; border:none; border-radius:6px; cursor:pointer;
+    font-size:13px; font-weight:500; transition:0.2s;
+} button:hover{opacity:0.85;}
 .btn-view{background:#2563eb;color:white;}
 .btn-delete{background:#dc2626;color:white;}
 .btn-refresh{background:#10b981;color:white;}
 .btn-back{background:#6b7280;color:white;}
 .btn-pdf{background:#9333ea;color:white;}
-
 .search-box{
-    margin-bottom:15px;
-    padding:10px;
-    width:100%;
-    max-width:350px;
-    border-radius:8px;
-    border:1px solid #ccc;
-    font-size:14px;
+    margin-bottom:15px; padding:10px; width:100%; max-width:350px;
+    border-radius:8px; border:1px solid #ccc; font-size:14px;
 }
-.dark .search-box{
-    background:#333;
-    color:white;
-    border:1px solid #555;
-}
-
+.dark .search-box{ background:#333; color:white; border:1px solid #555; }
 .status-online{color:#16a34a;font-weight:bold;}
 .status-offline{color:#dc2626;font-weight:bold;}
-
 .section-title{
-    font-weight:bold;
-    font-size:16px;
-    margin-top:20px;
-    margin-bottom:10px;
-    border-bottom:1px solid #ccc;
-    padding-bottom:5px;
+    font-weight:bold; font-size:16px;
+    margin-top:20px; margin-bottom:10px;
+    border-bottom:1px solid #ccc; padding-bottom:5px;
 }
-.dark .section-title{
-    border-color:#555;
-}
-
-/* Responsive */
+.dark .section-title{ border-color:#555; }
 @media(max-width:768px){
     table, th, td { font-size:12px; }
     header { flex-direction:column; gap:10px; }
@@ -702,177 +636,105 @@ button:hover {opacity:0.85;}
 <body>
 
 <header>
-    <h2>Client Monitoring Dashboard</h2>
-    <div>
-        <button class="btn-refresh" onclick="manualRefresh()">Refresh</button>
-        <button onclick="toggleDark()">Dark Mode</button>
-    </div>
+<h2>Client Monitoring Dashboard</h2>
+<div>
+<button class="btn-refresh" onclick="manualRefresh()">Refresh</button>
+<button onclick="toggleDark()">Dark Mode</button>
+</div>
 </header>
 
 <div class="container">
-
-<!-- ================= CLIENT LIST PAGE ================= -->
 <div id="clientListPage">
-
 <div class="card">
-<input type="text" id="searchInput" class="search-box"
-placeholder="Search UUID, Hostname, IP, Status..."
-onkeyup="filterClients()">
-
+<input type="text" id="searchInput" class="search-box" placeholder="Search UUID, Hostname, IP, Status..." onkeyup="filterClients()">
 <table id="clientsTable">
-<thead>
-<tr>
-<th>UUID</th>
-<th>Hostname</th>
-<th>IP</th>
-<th>Status</th>
-<th>Last Seen</th>
-<th>Action</th>
-</tr>
-</thead>
+<thead><tr>
+<th>UUID</th><th>Hostname</th><th>IP</th><th>Status</th><th>Last Seen</th><th>Action</th>
+</tr></thead>
 <tbody></tbody>
 </table>
-
 </div>
 </div>
 
-<!-- ================= CLIENT DETAIL PAGE ================= -->
 <div id="clientDetailPage" style="display:none;">
-
 <button class="btn-back" onclick="goBack()">Back</button>
 <button class="btn-pdf" onclick="downloadPDF()">Export PDF</button>
-
 <div class="card" id="clientInfo"></div>
-
 <div class="card">
 <div class="section-title">Hardware Information</div>
 <div id="hardwareSection"></div>
 </div>
-
 <div class="card">
 <div class="section-title">Installed Applications</div>
-<input type="text" id="appSearch" class="search-box"
-placeholder="Search App..."
-onkeyup="filterApps()">
+<input type="text" id="appSearch" class="search-box" placeholder="Search App..." onkeyup="filterApps()">
 <div id="appsSection"></div>
 </div>
-
 </div>
-
 </div>
 
 <script>
-let allClients = [];
-let currentUUID = "";
-let currentApps = [];
-
-function toggleDark(){
-    document.body.classList.toggle("dark");
-}
-
-function manualRefresh(){
-    loadClients();
-}
+let allClients=[], currentUUID="", currentApps=[];
+function toggleDark(){document.body.classList.toggle("dark");}
+function manualRefresh(){loadClients();}
 
 async function loadClients(){
-    const res = await fetch("/api/clients");
-    const data = await res.json();
-    allClients = data;
-
-    const tbody = document.querySelector("#clientsTable tbody");
-    tbody.innerHTML = "";
-
+    const res=await fetch("/api/clients");
+    const data=await res.json();
+    allClients=data;
+    const tbody=document.querySelector("#clientsTable tbody"); tbody.innerHTML="";
     data.forEach(c=>{
-        const row = `
-        <tr>
-            <td>${c.uuid}</td>
-            <td>${c.hostname}</td>
-            <td>${c.ip}</td>
-            <td class="${c.status==='Online'?'status-online':'status-offline'}">${c.status}</td>
-            <td>${c.last_seen}</td>
-            <td>
-                <button class="btn-view" onclick="viewClient('${c.uuid}')">View</button>
-                <button class="btn-delete" onclick="deleteClient('${c.uuid}')">Delete</button>
-            </td>
-        </tr>`;
-        tbody.innerHTML += row;
+        const row=`<tr>
+<td>${c.uuid}</td><td>${c.hostname}</td><td>${c.ip}</td>
+<td class="${c.status==='Online'?'status-online':'status-offline'}">${c.status}</td>
+<td>${c.last_seen}</td>
+<td>
+<button class="btn-view" onclick="viewClient('${c.uuid}')">View</button>
+<button class="btn-delete" onclick="deleteClient('${c.uuid}')">Delete</button>
+</td>
+</tr>`;
+        tbody.innerHTML+=row;
     });
 }
 
 function filterClients(){
-    const search = document.getElementById("searchInput").value.toLowerCase();
-    const rows = document.querySelectorAll("#clientsTable tbody tr");
-    rows.forEach(r=>{
-        r.style.display = r.innerText.toLowerCase().includes(search) ? "" : "none";
+    const search=document.getElementById("searchInput").value.toLowerCase();
+    document.querySelectorAll("#clientsTable tbody tr").forEach(r=>{
+        r.style.display=r.innerText.toLowerCase().includes(search)?"":"none";
     });
 }
 
 async function viewClient(uuid){
-    currentUUID = uuid;
-    const res = await fetch("/api/client/"+uuid);
-    const data = await res.json();
-
+    currentUUID=uuid;
+    const res=await fetch("/api/client/"+uuid);
+    const data=await res.json();
     document.getElementById("clientListPage").style.display="none";
     document.getElementById("clientDetailPage").style.display="block";
-
-    document.getElementById("clientInfo").innerHTML = `
-        <b>UUID:</b> ${data.uuid}<br>
-        <b>Hostname:</b> ${data.hostname}<br>
-        <b>IP:</b> ${data.ip}<br>
-        <b>Status:</b> ${data.status}<br>
-        <b>Last Seen:</b> ${data.last_seen}
-    `;
-
-    // Hardware
-    let hwHTML = "";
-    const hw = data.hardware || {};
-
-    for(let key in hw){
-        if(key !== "Disks"){
-            hwHTML += `<b>${key}:</b> ${hw[key]}<br>`;
-        }
-    }
-
-    if(hw.Disks){
-        hwHTML += "<br><b>Disks:</b><br>";
-        hw.Disks.forEach(d=>{
-            hwHTML += `
-            ${d.Device || d.Mountpoint}
-            (Total: ${d["Total (GB)"]} GB,
-            Used: ${d["Used (GB)"]} GB,
-            Free: ${d["Free (GB)"]} GB)
-            <br>`;
-        });
-    }
-
-    document.getElementById("hardwareSection").innerHTML = hwHTML;
-
-    // Apps
-    currentApps = data.apps || [];
+    document.getElementById("clientInfo").innerHTML=`
+<b>UUID:</b> ${data.uuid}<br>
+<b>Hostname:</b> ${data.hostname}<br>
+<b>IP:</b> ${data.ip}<br>
+<b>Status:</b> ${data.status}<br>
+<b>Last Seen:</b> ${data.last_seen}
+`;
+    let hwHTML=""; const hw=data.hardware||{};
+    for(let key in hw){ if(key!=="Disks"){ hwHTML+=`<b>${key}:</b> ${hw[key]}<br>`; }}
+    if(hw.Disks){ hwHTML+="<br><b>Disks:</b><br>"; hw.Disks.forEach(d=>{
+        hwHTML+=`${d.Device||d.Mountpoint} (Total: ${d["Total (GB)"]} GB, Used: ${d["Used (GB)"]} GB, Free: ${d["Free (GB)"]} GB)<br>`;
+    });}
+    document.getElementById("hardwareSection").innerHTML=hwHTML;
+    currentApps=data.apps||[];
     renderApps(currentApps);
 }
 
 function renderApps(apps){
-    let html = "<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr>";
-    apps.forEach(a=>{
-        let size = (a.size_bytes || 0) / (1024*1024);
-        html += `<tr>
-            <td>${a.name}</td>
-            <td>${a.version}</td>
-            <td>${a.install_date}</td>
-            <td>${size.toFixed(2)}</td>
-        </tr>`;
-    });
-    html += "</table>";
-    document.getElementById("appsSection").innerHTML = html;
+    let html="<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr>";
+    apps.forEach(a=>{let size=(a.size_bytes||0)/(1024*1024); html+=`<tr><td>${a.name}</td><td>${a.version}</td><td>${a.install_date}</td><td>${size.toFixed(2)}</td></tr>`;});
+    html+="</table>"; document.getElementById("appsSection").innerHTML=html;
 }
 
 function filterApps(){
-    const search = document.getElementById("appSearch").value.toLowerCase();
-    const filtered = currentApps.filter(a =>
-        a.name.toLowerCase().includes(search)
-    );
-    renderApps(filtered);
+    const search=document.getElementById("appSearch").value.toLowerCase();
+    renderApps(currentApps.filter(a=>a.name.toLowerCase().includes(search)));
 }
 
 function goBack(){
@@ -882,24 +744,16 @@ function goBack(){
 
 function deleteClient(uuid){
     if(confirm("Delete this client?")){
-        fetch("/api/client/"+uuid,{method:"DELETE"})
-        .then(()=>loadClients());
+        fetch("/api/client/"+uuid,{method:"DELETE"}).then(()=>loadClients());
     }
 }
 
 function downloadPDF(){
     if(!currentUUID) return alert("No client selected");
-    // Fixed: force download using proper URL
-    window.open(`/api/client/${currentUUID}/pdf`, "_blank");
+    window.open(`/api/client/${currentUUID}/pdf`,"_blank");
 }
 
-// Auto refresh every 10 seconds
-setInterval(()=>{
-    if(document.getElementById("clientListPage").style.display!=="none"){
-        loadClients();
-    }
-},10000);
-
+setInterval(()=>{if(document.getElementById("clientListPage").style.display!=="none"){loadClients();}},10000);
 loadClients();
 </script>
 
