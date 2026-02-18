@@ -625,7 +625,7 @@ th, td {
     text-align: left;
 }
 
-body.dark th, 
+body.dark th,
 body.dark td {
     border-bottom: 1px solid #333;
 }
@@ -653,16 +653,6 @@ body.dark .card {
 body.dark .section-title {
     border-bottom: 1px solid #444;
 }
-
-hr {
-    margin-top: 40px;
-    border: none;
-    border-top: 1px solid #ccc;
-}
-
-body.dark hr {
-    border-top: 1px solid #444;
-}
 </style>
 </head>
 
@@ -671,61 +661,57 @@ body.dark hr {
 <h1>Client Management Dashboard</h1>
 
 <div class="top-bar">
-    <div>
-        <a href="/export_csv" class="btn">Export CSV</a>
-    </div>
+    <div></div>
     <div>
         <button onclick="toggleDark()">Toggle Dark Mode</button>
     </div>
 </div>
 
-<!-- CLIENT LIST TABLE -->
+<!-- CLIENT LIST -->
 
 <table>
-    <tr>
-        <th>ID</th>
-        <th>Hostname</th>
-        <th>User</th>
-        <th>IP Address</th>
-        <th>OS</th>
-        <th>RAM (GB)</th>
-        <th>Action</th>
-    </tr>
+<tr>
+    <th>Hostname</th>
+    <th>MAC Address</th>
+    <th>IP</th>
+    <th>Last Seen</th>
+    <th>Action</th>
+</tr>
 
-    {% for client in clients %}
-    <tr>
-        <td>{{ client.id }}</td>
-        <td>{{ client.hostname }}</td>
-        <td>{{ client.user }}</td>
-        <td>{{ client.ip }}</td>
-        <td>{{ client.os }}</td>
-        <td>{{ client.ram }}</td>
-        <td>
-            <a href="/?view={{ client.id }}" class="btn">View</a>
-        </td>
-    </tr>
-    {% endfor %}
+{% for client in clients %}
+<tr>
+    <td>{{ client.hostname }}</td>
+    <td>{{ client.mac_address }}</td>
+    <td>{{ client.ip }}</td>
+    <td>{{ client.last_seen }}</td>
+    <td>
+        <a href="/?view={{ client.client_uuid }}" class="btn">View</a>
+    </td>
+</tr>
+{% endfor %}
 </table>
+
 
 <!-- SELECTED CLIENT DETAILS -->
 
 {% if selected_client %}
 
-<hr>
-
 <div class="card">
     <div class="section-title">Hardware Information</div>
+
     <p><strong>Hostname:</strong> {{ selected_client.hostname }}</p>
-    <p><strong>User:</strong> {{ selected_client.user }}</p>
-    <p><strong>IP Address:</strong> {{ selected_client.ip }}</p>
-    <p><strong>Operating System:</strong> {{ selected_client.os }}</p>
-    <p><strong>Platform:</strong> {{ selected_client.platform }}</p>
-    <p><strong>RAM (GB):</strong> {{ selected_client.ram }}</p>
-    <p><strong>CPU:</strong> {{ selected_client.cpu }}</p>
-    <p><strong>CPU Cores:</strong> {{ selected_client.cpu_cores }}</p>
-    <p><strong>Logical CPUs:</strong> {{ selected_client.logical_cpus }}</p>
+    <p><strong>Client Reported IP:</strong> {{ selected_client.client_ip }}</p>
+    <p><strong>Server Detected IP:</strong> {{ selected_client.ip }}</p>
+
+    <p><strong>OS:</strong> {{ hardware.os }}</p>
+    <p><strong>Platform:</strong> {{ hardware.platform }}</p>
+    <p><strong>RAM (GB):</strong> {{ hardware.ram }}</p>
+    <p><strong>CPU:</strong> {{ hardware.cpu }}</p>
+    <p><strong>CPU Cores:</strong> {{ hardware.cpu_cores }}</p>
+    <p><strong>Logical CPUs:</strong> {{ hardware.logical_cpus }}</p>
 </div>
 
+{% if hardware.disks %}
 <div class="card">
     <div class="section-title">Disk Information</div>
     <table>
@@ -735,7 +721,7 @@ body.dark hr {
             <th>Used (GB)</th>
             <th>Free (GB)</th>
         </tr>
-        {% for disk in disks %}
+        {% for disk in hardware.disks %}
         <tr>
             <td>{{ disk.Device }}</td>
             <td>{{ disk["Total (GB)"] }}</td>
@@ -745,7 +731,9 @@ body.dark hr {
         {% endfor %}
     </table>
 </div>
+{% endif %}
 
+{% if apps %}
 <div class="card">
     <div class="section-title">Installed Applications</div>
     <table>
@@ -753,7 +741,7 @@ body.dark hr {
             <th>Name</th>
             <th>Version</th>
             <th>Install Date</th>
-            <th>Disk Size</th>
+            <th>Size</th>
         </tr>
         {% for app in apps %}
         <tr>
@@ -765,12 +753,14 @@ body.dark hr {
         {% endfor %}
     </table>
 </div>
+{% endif %}
 
 <div style="margin-top:20px;">
     <a href="/" class="btn">← Back to Dashboard</a>
 </div>
 
 {% endif %}
+
 
 <script>
 function toggleDark() {
