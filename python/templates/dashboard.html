@@ -582,9 +582,7 @@
             transition: background 0.3s, color 0.3s;
         }
 
-        h1 {
-            margin-bottom: 20px;
-        }
+        h1 { margin-bottom: 20px; }
 
         .top-bar {
             display: flex;
@@ -598,12 +596,14 @@
             border: none;
             cursor: pointer;
             font-size: 14px;
+            text-decoration: none;
+            display: inline-block;
         }
 
-        .btn-dark {
-            background: #222;
-            color: white;
-        }
+        .btn-dark { background: #222; color: white; }
+        .btn-view { background: #007bff; color: white; }
+        .btn-delete { background: #dc3545; color: white; }
+        .btn-export { background: #28a745; color: white; }
 
         .card {
             background: white;
@@ -656,32 +656,15 @@
             border-bottom: 1px solid #ddd;
         }
 
-        tr:hover {
-            background: #f1f1f1;
-        }
+        tr:hover { background: #f1f1f1; }
 
-        /* ------------------ DARK MODE ------------------ */
+        /* DARK MODE */
 
-        body.dark {
-            background: #121212;
-            color: #e0e0e0;
-        }
-
-        body.dark .card {
-            background: #1e1e1e;
-        }
-
-        body.dark .info-box {
-            background: #2a2a2a;
-        }
-
-        body.dark th {
-            background: #333;
-        }
-
-        body.dark tr:hover {
-            background: #2a2a2a;
-        }
+        body.dark { background: #121212; color: #e0e0e0; }
+        body.dark .card { background: #1e1e1e; }
+        body.dark .info-box { background: #2a2a2a; }
+        body.dark th { background: #333; }
+        body.dark tr:hover { background: #2a2a2a; }
 
     </style>
 </head>
@@ -689,64 +672,69 @@
 
 <div class="top-bar">
     <h1>🖥 Client Dashboard</h1>
-    <button class="btn btn-dark" onclick="toggleDarkMode()">🌙 Toggle Dark Mode</button>
-</div>
-
-{% if client %}
-
-<!-- ================= HARDWARE INFO ================= -->
-<div class="card">
-    <h2>Hardware Information</h2>
-
-    <div class="hardware-grid">
-        <div class="info-box">
-            <small>Hostname</small>
-            <strong>{{ client.hostname }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>User</small>
-            <strong>{{ client.user }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>Operating System</small>
-            <strong>{{ client.os }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>Platform</small>
-            <strong>{{ client.platform }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>IP Address</small>
-            <strong>{{ client.ip_address }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>CPU</small>
-            <strong>{{ client.cpu }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>Physical Cores</small>
-            <strong>{{ client.cpu_cores }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>Logical CPUs</small>
-            <strong>{{ client.logical_cpus }}</strong>
-        </div>
-
-        <div class="info-box">
-            <small>RAM</small>
-            <strong>{{ client.ram_gb }} GB</strong>
-        </div>
+    <div>
+        <a href="/export/csv" class="btn btn-export">⬇ Export CSV</a>
+        <button class="btn btn-dark" onclick="toggleDarkMode()">🌙 Toggle Dark Mode</button>
     </div>
 </div>
 
-<!-- ================= DISK INFO ================= -->
+<!-- ================= CLIENT LIST ================= -->
+
+<div class="card">
+    <h2>Registered Clients</h2>
+
+    {% if clients %}
+    <table>
+        <thead>
+            <tr>
+                <th>Hostname</th>
+                <th>IP</th>
+                <th>MAC</th>
+                <th>Status</th>
+                <th>Action</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in clients %}
+            <tr>
+                <td>{{ c.hostname }}</td>
+                <td>{{ c.ip }}</td>
+                <td>{{ c.mac }}</td>
+                <td>{{ c.status }}</td>
+                <td>
+                    <a href="/client/{{ c.uuid }}" class="btn btn-view">View</a>
+                    <a href="/delete/{{ c.uuid }}" class="btn btn-delete"
+                       onclick="return confirm('Delete this client?')">Delete</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+        <p>No clients registered.</p>
+    {% endif %}
+</div>
+
+<!-- ================= SELECTED CLIENT DETAILS ================= -->
+
+{% if client %}
+
+<div class="card">
+    <h2>Hardware Information ({{ client.hostname }})</h2>
+
+    <div class="hardware-grid">
+        <div class="info-box"><small>Hostname</small><strong>{{ client.hostname }}</strong></div>
+        <div class="info-box"><small>User</small><strong>{{ client.user }}</strong></div>
+        <div class="info-box"><small>Operating System</small><strong>{{ client.os }}</strong></div>
+        <div class="info-box"><small>Platform</small><strong>{{ client.platform }}</strong></div>
+        <div class="info-box"><small>IP Address</small><strong>{{ client.ip_address }}</strong></div>
+        <div class="info-box"><small>CPU</small><strong>{{ client.cpu }}</strong></div>
+        <div class="info-box"><small>Physical Cores</small><strong>{{ client.cpu_cores }}</strong></div>
+        <div class="info-box"><small>Logical CPUs</small><strong>{{ client.logical_cpus }}</strong></div>
+        <div class="info-box"><small>RAM</small><strong>{{ client.ram_gb }} GB</strong></div>
+    </div>
+</div>
+
 <div class="card">
     <h2>Disk Usage</h2>
 
@@ -772,8 +760,6 @@
     </table>
 </div>
 
-{% else %}
-    <p>No client selected.</p>
 {% endif %}
 
 <script>
@@ -784,3 +770,4 @@ function toggleDarkMode() {
 
 </body>
 </html>
+
