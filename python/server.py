@@ -2174,6 +2174,7 @@ from reportlab.lib.pagesizes import A4
 import tempfile
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+
 app = Flask(__name__, template_folder="templates")
 
 # ================= DATABASE =================
@@ -2184,7 +2185,7 @@ def get_db():
 def init_db():
     con = get_db()
     cur = con.cursor()
-    # clients table
+    # Clients table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             client_uuid TEXT PRIMARY KEY,
@@ -2196,11 +2197,11 @@ def init_db():
             apps JSONB
         )
     """)
-    # app history table
+    # App history table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS app_history (
             id SERIAL PRIMARY KEY,
-            client_uuid TEXT,
+            client_uuid TEXT REFERENCES clients(client_uuid),
             timestamp TIMESTAMP,
             apps JSONB
         )
@@ -2213,12 +2214,12 @@ if DATABASE_URL:
 
 # ================= HELPERS =================
 
-OFFLINE_SECONDS = 30  # 30 seconds timeout
+OFFLINE_SECONDS = 30
 
 def status_from_last_seen(ts):
     if not ts:
         return "Offline"
-    diff = (datetime.datetime.now() - ts).total_seconds()  # LOCAL SERVER TIME
+    diff = (datetime.datetime.now() - ts).total_seconds()  # server time
     return "Online" if diff <= OFFLINE_SECONDS else "Offline"
 
 def safe_json(v):
@@ -2244,14 +2245,15 @@ def client_page(uuid):
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
-
     hardware = json.dumps(data.get("hardware", {}))
     apps = json.dumps(data.get("apps", []))
+
+    now = datetime.datetime.now()  # server time
 
     con = get_db()
     cur = con.cursor()
 
-    # Insert or update client info
+    # Insert/update client
     cur.execute("""
         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
@@ -2266,7 +2268,7 @@ def api_report():
         data.get("uuid"),
         data.get("mac"),
         data.get("hostname"),
-        datetime.datetime.now(),  # SERVER TIME
+        now,
         data.get("hardware", {}).get("IP Address"),
         hardware,
         apps
@@ -2278,7 +2280,7 @@ def api_report():
         VALUES (%s,%s,%s)
     """, (
         data.get("uuid"),
-        datetime.datetime.now(),
+        now,
         apps
     ))
 
@@ -2286,7 +2288,6 @@ def api_report():
     con.close()
 
     return jsonify({"status": "ok"})
-
 
 @app.route("/api/clients")
 def api_clients():
@@ -2309,14 +2310,12 @@ def api_clients():
 
     return jsonify(result)
 
-
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
     con = get_db()
     cur = con.cursor()
     cur.execute("""
-        SELECT client_uuid, hostname, ip, mac_address,
-               last_seen, hardware, apps
+        SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
         FROM clients WHERE client_uuid=%s
     """, (uuid,))
     r = cur.fetchone()
@@ -2336,7 +2335,6 @@ def api_client(uuid):
         "apps": safe_json(r[6])
     })
 
-
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
     con = get_db()
@@ -2345,7 +2343,6 @@ def delete_client(uuid):
     con.commit()
     con.close()
     return jsonify({"status": "deleted"})
-
 
 @app.route("/api/client/<uuid>/pdf")
 def download_pdf(uuid):
@@ -2418,10 +2415,12 @@ def download_pdf(uuid):
     # Apps
     apps_data = [["Name", "Version", "Install Date", "Size (MB)"]]
     for a in apps:
+        size_bytes = a.get("size_bytes", 0)
         try:
-            size_mb = round(float(a.get("size_bytes", 0)) / (1024*1024), 2)
+            size_bytes = int(size_bytes)
         except:
-            size_mb = 0.0
+            size_bytes = 0
+        size_mb = round(size_bytes / (1024*1024), 2)
         apps_data.append([
             a.get("name",""),
             a.get("version",""),
@@ -2437,20 +2436,18 @@ def download_pdf(uuid):
     ]))
 
     elements.append(apps_table)
+
     doc.build(elements)
 
     return Response(open(temp.name,"rb"),
                     mimetype="application/pdf",
                     headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
 
-
 # ================= APP HISTORY =================
 
 @app.route("/api/client/<uuid>/history")
-def get_app_history():
-    uuid = request.view_args["uuid"]
-    app_name = request.args.get("app","").lower()
-
+def get_app_history(uuid):
+    app_name = request.args.get("app", "").lower()
     con = get_db()
     cur = con.cursor()
     cur.execute("""
@@ -2466,7 +2463,7 @@ def get_app_history():
     for ts, apps in rows:
         apps_list = safe_json(apps)
         if app_name:
-            apps_list = [a for a in apps_list if app_name in a.get("name","").lower()]
+            apps_list = [a for a in apps_list if app_name in a.get("name", "").lower()]
             if not apps_list:
                 continue
         result.append({
@@ -2478,7 +2475,6 @@ def get_app_history():
         return jsonify({"error": "No history found for this app"}), 404
 
     return jsonify(result)
-
 
 # ================= RUN =================
 
