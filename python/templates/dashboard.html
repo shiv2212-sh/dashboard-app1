@@ -570,174 +570,159 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Client Dashboard</title>
-    <meta charset="UTF-8">
-    <style>
-        body {
-            margin: 0;
-            font-family: 'Segoe UI', sans-serif;
-            background: linear-gradient(135deg, #0f172a, #1e293b);
-            color: white;
-        }
+<meta charset="UTF-8">
+<title>Client Monitoring Dashboard</title>
 
-        .container {
-            padding: 40px;
-        }
+<style>
+body{
+    margin:0;
+    font-family:Segoe UI,Arial;
+    background:#f4f6f9;
+}
+.dark{
+    background:#1e1e1e;
+    color:#eee;
+}
+header{
+    background:#1f2937;
+    color:white;
+    padding:15px 30px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+header h2{margin:0;}
 
-        h1 {
-            font-weight: 600;
-            margin-bottom: 30px;
-        }
+.container{
+    padding:30px;
+}
 
-        .glass-card {
-            background: rgba(255,255,255,0.05);
-            backdrop-filter: blur(12px);
-            border-radius: 16px;
-            padding: 20px;
-            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
-            margin-bottom: 25px;
-        }
+.card{
+    background:white;
+    padding:20px;
+    border-radius:10px;
+    box-shadow:0 4px 10px rgba(0,0,0,0.08);
+    margin-bottom:20px;
+}
+.dark .card{
+    background:#2b2b2b;
+}
 
-        input {
-            width: 100%;
-            padding: 12px;
-            border-radius: 10px;
-            border: none;
-            outline: none;
-            background: rgba(255,255,255,0.1);
-            color: white;
-            margin-bottom: 20px;
-        }
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+th,td{
+    padding:12px;
+    text-align:left;
+}
+th{
+    background:#111827;
+    color:white;
+}
+.dark th{
+    background:#000;
+}
+tr:nth-child(even){
+    background:#f9fafb;
+}
+.dark tr:nth-child(even){
+    background:#333;
+}
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
+button{
+    padding:6px 12px;
+    border:none;
+    border-radius:6px;
+    cursor:pointer;
+    font-size:13px;
+}
+.btn-view{background:#2563eb;color:white;}
+.btn-delete{background:#dc2626;color:white;}
+.btn-refresh{background:#10b981;color:white;}
+.btn-back{background:#6b7280;color:white;}
+.btn-pdf{background:#9333ea;color:white;}
 
-        th {
-            text-align: left;
-            padding: 12px;
-            font-weight: 500;
-            opacity: 0.8;
-        }
+.search-box{
+    margin-bottom:15px;
+    padding:8px;
+    width:300px;
+    border-radius:6px;
+    border:1px solid #ccc;
+}
+.dark .search-box{
+    background:#333;
+    color:white;
+    border:1px solid #555;
+}
 
-        td {
-            padding: 12px;
-            border-top: 1px solid rgba(255,255,255,0.08);
-        }
+.status-online{color:#16a34a;font-weight:bold;}
+.status-offline{color:#dc2626;font-weight:bold;}
 
-        tr:hover {
-            background: rgba(255,255,255,0.05);
-            transition: 0.2s;
-        }
-
-        .status {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .online {
-            background: rgba(16,185,129,0.2);
-            color: #10b981;
-        }
-
-        .offline {
-            background: rgba(239,68,68,0.2);
-            color: #ef4444;
-        }
-
-        button {
-            padding: 6px 12px;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            margin-right: 5px;
-            font-size: 12px;
-        }
-
-        .view-btn { background: #3b82f6; color: white; }
-        .pdf-btn { background: #10b981; color: white; }
-        .delete-btn { background: #ef4444; color: white; }
-
-        #clientDetail { display: none; }
-
-        .back-btn {
-            margin-bottom: 20px;
-            background: #64748b;
-            color: white;
-        }
-
-        .section-title {
-            margin-top: 30px;
-            margin-bottom: 10px;
-            font-weight: 600;
-            font-size: 18px;
-        }
-
-        .hardware-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px,1fr));
-            gap: 15px;
-        }
-
-        .hardware-item {
-            background: rgba(255,255,255,0.06);
-            padding: 15px;
-            border-radius: 12px;
-        }
-    </style>
+.section-title{
+    font-weight:bold;
+    margin-top:20px;
+    margin-bottom:10px;
+}
+</style>
 </head>
 <body>
 
+<header>
+    <h2>Client Monitoring Dashboard</h2>
+    <div>
+        <button class="btn-refresh" onclick="manualRefresh()">Refresh</button>
+        <button onclick="toggleDark()">Dark Mode</button>
+    </div>
+</header>
+
 <div class="container">
 
-<h1>Client Monitoring Dashboard</h1>
+<!-- ================= CLIENT LIST PAGE ================= -->
+<div id="clientListPage">
 
-<div id="clientList" class="glass-card">
-    <input type="text" id="dashboardSearch" placeholder="Search by UUID, Hostname, IP or Status..." onkeyup="filterClients()">
+<div class="card">
+<input type="text" id="searchInput" class="search-box"
+placeholder="Search UUID, Hostname, IP, Status..."
+onkeyup="filterClients()">
 
-    <table>
-        <thead>
-            <tr>
-                <th>UUID</th>
-                <th>Hostname</th>
-                <th>IP</th>
-                <th>Status</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody id="clientTable"></tbody>
-    </table>
+<table id="clientsTable">
+<thead>
+<tr>
+<th>UUID</th>
+<th>Hostname</th>
+<th>IP</th>
+<th>Status</th>
+<th>Last Seen</th>
+<th>Action</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
+
+</div>
 </div>
 
-<div id="clientDetail" class="glass-card">
+<!-- ================= CLIENT DETAIL PAGE ================= -->
+<div id="clientDetailPage" style="display:none;">
 
-    <button class="back-btn" onclick="goBack()">← Back</button>
+<button class="btn-back" onclick="goBack()">Back</button>
+<button class="btn-pdf" onclick="downloadPDF()">Export PDF</button>
 
-    <h2 id="detailHostname"></h2>
+<div class="card" id="clientInfo"></div>
 
-    <div class="section-title">System Info</div>
-    <div id="basicInfo"></div>
+<div class="card">
+<div class="section-title">Hardware Information</div>
+<div id="hardwareSection"></div>
+</div>
 
-    <div class="section-title">Hardware Information</div>
-    <div id="hardwareInfo" class="hardware-grid"></div>
-
-    <input type="text" id="appSearch" placeholder="Search installed applications..." onkeyup="filterApps()">
-
-    <div class="section-title">Installed Applications</div>
-    <table>
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Version</th>
-                <th>Install Date</th>
-                <th>Size (MB)</th>
-            </tr>
-        </thead>
-        <tbody id="appsTable"></tbody>
-    </table>
+<div class="card">
+<div class="section-title">Installed Applications</div>
+<input type="text" id="appSearch" class="search-box"
+placeholder="Search App..."
+onkeyup="filterApps()">
+<div id="appsSection"></div>
+</div>
 
 </div>
 
@@ -746,136 +731,140 @@
 <script>
 
 let allClients = [];
+let currentUUID = "";
 let currentApps = [];
 
-function formatMB(bytes) {
-    if (!bytes) return "0";
-    return (bytes / (1024 * 1024)).toFixed(2);
+function toggleDark(){
+    document.body.classList.toggle("dark");
 }
 
-function loadClients() {
-    fetch("/api/clients")
-        .then(res => res.json())
-        .then(data => {
-            allClients = data;
-            renderClients(data);
-        });
+function manualRefresh(){
+    loadClients();
 }
 
-function renderClients(data) {
-    const table = document.getElementById("clientTable");
-    table.innerHTML = "";
+async function loadClients(){
+    const res = await fetch("/api/clients");
+    const data = await res.json();
+    allClients = data;
 
-    data.forEach(client => {
-        table.innerHTML += `
-            <tr>
-                <td>${client.uuid}</td>
-                <td>${client.hostname}</td>
-                <td>${client.ip}</td>
-                <td>
-                    <span class="status ${client.status === "Online" ? "online" : "offline"}">
-                        ${client.status}
-                    </span>
-                </td>
-                <td>
-                    <button class="view-btn" onclick="viewClient('${client.uuid}')">View</button>
-                    <button class="pdf-btn" onclick="downloadPDF('${client.uuid}')">PDF</button>
-                    <button class="delete-btn" onclick="deleteClient('${client.uuid}')">Delete</button>
-                </td>
-            </tr>
-        `;
+    const tbody = document.querySelector("#clientsTable tbody");
+    tbody.innerHTML = "";
+
+    data.forEach(c=>{
+        const row = `
+        <tr>
+            <td>${c.uuid}</td>
+            <td>${c.hostname}</td>
+            <td>${c.ip}</td>
+            <td class="${c.status==='Online'?'status-online':'status-offline'}">${c.status}</td>
+            <td>${c.last_seen}</td>
+            <td>
+                <button class="btn-view" onclick="viewClient('${c.uuid}')">View</button>
+                <button class="btn-delete" onclick="deleteClient('${c.uuid}')">Delete</button>
+            </td>
+        </tr>`;
+        tbody.innerHTML += row;
     });
 }
 
-function filterClients() {
-    const search = document.getElementById("dashboardSearch").value.toLowerCase();
-
-    const filtered = allClients.filter(c =>
-        (c.uuid || "").toLowerCase().includes(search) ||
-        (c.hostname || "").toLowerCase().includes(search) ||
-        (c.ip || "").toLowerCase().includes(search) ||
-        (c.status || "").toLowerCase().includes(search)
-    );
-
-    renderClients(filtered);
-}
-
-function viewClient(uuid) {
-    fetch(`/api/client/${uuid}`)
-        .then(res => res.json())
-        .then(client => {
-
-            document.getElementById("clientList").style.display = "none";
-            document.getElementById("clientDetail").style.display = "block";
-
-            document.getElementById("detailHostname").innerText = client.hostname;
-
-            document.getElementById("basicInfo").innerHTML = `
-                <p><b>UUID:</b> ${client.uuid}</p>
-                <p><b>IP:</b> ${client.ip}</p>
-                <p><b>MAC:</b> ${client.mac}</p>
-                <p><b>Last Seen:</b> ${client.last_seen}</p>
-            `;
-
-            const hwDiv = document.getElementById("hardwareInfo");
-            hwDiv.innerHTML = "";
-
-            for (let key in client.hardware) {
-                if (key !== "Disks") {
-                    hwDiv.innerHTML += `
-                        <div class="hardware-item">
-                            <b>${key}</b><br>${client.hardware[key]}
-                        </div>
-                    `;
-                }
-            }
-
-            currentApps = client.apps;
-            renderApps(client.apps);
-        });
-}
-
-function renderApps(apps) {
-    const appsTable = document.getElementById("appsTable");
-    appsTable.innerHTML = "";
-
-    apps.forEach(app => {
-        appsTable.innerHTML += `
-            <tr>
-                <td>${app.name}</td>
-                <td>${app.version}</td>
-                <td>${app.install_date}</td>
-                <td>${formatMB(app.size_bytes)} MB</td>
-            </tr>
-        `;
+function filterClients(){
+    const search = document.getElementById("searchInput").value.toLowerCase();
+    const rows = document.querySelectorAll("#clientsTable tbody tr");
+    rows.forEach(r=>{
+        r.style.display = r.innerText.toLowerCase().includes(search) ? "" : "none";
     });
 }
 
-function filterApps() {
+async function viewClient(uuid){
+    currentUUID = uuid;
+    const res = await fetch("/api/client/"+uuid);
+    const data = await res.json();
+
+    document.getElementById("clientListPage").style.display="none";
+    document.getElementById("clientDetailPage").style.display="block";
+
+    document.getElementById("clientInfo").innerHTML = `
+        <b>UUID:</b> ${data.uuid}<br>
+        <b>Hostname:</b> ${data.hostname}<br>
+        <b>IP:</b> ${data.ip}<br>
+        <b>Status:</b> ${data.status}<br>
+        <b>Last Seen:</b> ${data.last_seen}
+    `;
+
+    // Hardware
+    let hwHTML = "";
+    const hw = data.hardware || {};
+
+    for(let key in hw){
+        if(key !== "Disks"){
+            hwHTML += `<b>${key}:</b> ${hw[key]}<br>`;
+        }
+    }
+
+    if(hw.Disks){
+        hwHTML += "<br><b>Disks:</b><br>";
+        hw.Disks.forEach(d=>{
+            hwHTML += `
+            ${d.Device || d.Mountpoint}
+            (Total: ${d["Total (GB)"]} GB,
+            Used: ${d["Used (GB)"]} GB,
+            Free: ${d["Free (GB)"]} GB)
+            <br>`;
+        });
+    }
+
+    document.getElementById("hardwareSection").innerHTML = hwHTML;
+
+    // Apps
+    currentApps = data.apps || [];
+    renderApps(currentApps);
+}
+
+function renderApps(apps){
+    let html = "<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr>";
+    apps.forEach(a=>{
+        let size = (a.size_bytes || 0) / (1024*1024);
+        html += `<tr>
+            <td>${a.name}</td>
+            <td>${a.version}</td>
+            <td>${a.install_date}</td>
+            <td>${size.toFixed(2)}</td>
+        </tr>`;
+    });
+    html += "</table>";
+    document.getElementById("appsSection").innerHTML = html;
+}
+
+function filterApps(){
     const search = document.getElementById("appSearch").value.toLowerCase();
-
-    const filtered = currentApps.filter(app =>
-        (app.name || "").toLowerCase().includes(search) ||
-        (app.version || "").toLowerCase().includes(search)
+    const filtered = currentApps.filter(a =>
+        a.name.toLowerCase().includes(search)
     );
-
     renderApps(filtered);
 }
 
-function downloadPDF(uuid) {
-    window.open(`/api/client/${uuid}/pdf`, "_blank");
+function goBack(){
+    document.getElementById("clientDetailPage").style.display="none";
+    document.getElementById("clientListPage").style.display="block";
 }
 
-function deleteClient(uuid) {
-    if (!confirm("Delete this client?")) return;
-    fetch(`/api/client/${uuid}`, { method: "DELETE" })
-        .then(() => loadClients());
+function deleteClient(uuid){
+    if(confirm("Delete this client?")){
+        fetch("/api/client/"+uuid,{method:"DELETE"})
+        .then(()=>loadClients());
+    }
 }
 
-function goBack() {
-    document.getElementById("clientDetail").style.display = "none";
-    document.getElementById("clientList").style.display = "block";
+function downloadPDF(){
+    window.location="/api/client/"+currentUUID+"/pdf";
 }
+
+// Auto refresh every 10 seconds
+setInterval(()=>{
+    if(document.getElementById("clientListPage").style.display!=="none"){
+        loadClients();
+    }
+},10000);
 
 loadClients();
 
