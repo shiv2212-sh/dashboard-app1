@@ -581,8 +581,14 @@
             padding: 20px;
         }
 
-        h1 {
-            margin-bottom: 20px;
+        h1 { margin-bottom: 10px; }
+
+        input {
+            padding: 8px;
+            width: 300px;
+            margin-bottom: 15px;
+            border-radius: 5px;
+            border: none;
         }
 
         table {
@@ -598,17 +604,10 @@
             text-align: left;
         }
 
-        th {
-            background: #334155;
-        }
+        th { background: #334155; }
 
-        tr:nth-child(even) {
-            background: #1e293b;
-        }
-
-        tr:nth-child(odd) {
-            background: #273449;
-        }
+        tr:nth-child(even) { background: #1e293b; }
+        tr:nth-child(odd) { background: #273449; }
 
         button {
             padding: 6px 12px;
@@ -633,9 +632,7 @@
             border-radius: 8px;
         }
 
-        .section {
-            margin-bottom: 20px;
-        }
+        .section { margin-bottom: 20px; }
 
         .card {
             background: #273449;
@@ -648,6 +645,9 @@
 <body>
 
 <h1>Client Dashboard</h1>
+
+<!-- 🔎 DASHBOARD SEARCH -->
+<input type="text" id="dashboardSearch" placeholder="Search by UUID, Hostname, IP or Status..." onkeyup="filterClients()">
 
 <!-- CLIENT LIST -->
 <div id="clientList">
@@ -685,10 +685,8 @@
         <div id="hardwareInfo"></div>
     </div>
 
-    <div class="section">
-        <h3>Disks</h3>
-        <div id="diskInfo"></div>
-    </div>
+    <!-- 🔎 APP SEARCH BAR -->
+    <input type="text" id="appSearch" placeholder="Search installed applications..." onkeyup="filterApps()">
 
     <div class="section">
         <h3>Installed Applications</h3>
@@ -708,6 +706,9 @@
 
 <script>
 
+let allClients = [];
+let currentApps = [];
+
 function formatMB(bytes) {
     if (!bytes) return "0";
     return (bytes / (1024 * 1024)).toFixed(2);
@@ -717,29 +718,47 @@ function loadClients() {
     fetch("/api/clients")
         .then(res => res.json())
         .then(data => {
-            const table = document.getElementById("clientTable");
-            table.innerHTML = "";
-
-            data.forEach(client => {
-                const row = document.createElement("tr");
-
-                row.innerHTML = `
-                    <td>${client.uuid}</td>
-                    <td>${client.hostname}</td>
-                    <td>${client.ip}</td>
-                    <td>${client.mac}</td>
-                    <td>${client.last_seen}</td>
-                    <td class="${client.status === "Online" ? "online" : "offline"}">${client.status}</td>
-                    <td>
-                        <button class="view-btn" onclick="viewClient('${client.uuid}')">View</button>
-                        <button class="pdf-btn" onclick="downloadPDF('${client.uuid}')">PDF</button>
-                        <button class="delete-btn" onclick="deleteClient('${client.uuid}')">Delete</button>
-                    </td>
-                `;
-
-                table.appendChild(row);
-            });
+            allClients = data;
+            renderClients(data);
         });
+}
+
+function renderClients(data) {
+    const table = document.getElementById("clientTable");
+    table.innerHTML = "";
+
+    data.forEach(client => {
+        const row = document.createElement("tr");
+
+        row.innerHTML = `
+            <td>${client.uuid}</td>
+            <td>${client.hostname}</td>
+            <td>${client.ip}</td>
+            <td>${client.mac}</td>
+            <td>${client.last_seen}</td>
+            <td class="${client.status === "Online" ? "online" : "offline"}">${client.status}</td>
+            <td>
+                <button class="view-btn" onclick="viewClient('${client.uuid}')">View</button>
+                <button class="pdf-btn" onclick="downloadPDF('${client.uuid}')">PDF</button>
+                <button class="delete-btn" onclick="deleteClient('${client.uuid}')">Delete</button>
+            </td>
+        `;
+
+        table.appendChild(row);
+    });
+}
+
+function filterClients() {
+    const search = document.getElementById("dashboardSearch").value.toLowerCase();
+
+    const filtered = allClients.filter(c =>
+        c.uuid.toLowerCase().includes(search) ||
+        c.hostname.toLowerCase().includes(search) ||
+        c.ip.toLowerCase().includes(search) ||
+        c.status.toLowerCase().includes(search)
+    );
+
+    renderClients(filtered);
 }
 
 function viewClient(uuid) {
@@ -748,6 +767,7 @@ function viewClient(uuid) {
         .then(client => {
 
             document.getElementById("clientList").style.display = "none";
+            document.getElementById("dashboardSearch").style.display = "none";
             document.getElementById("clientDetail").style.display = "block";
 
             document.getElementById("detailHostname").innerText = client.hostname;
@@ -756,7 +776,6 @@ function viewClient(uuid) {
             document.getElementById("detailMAC").innerText = client.mac;
             document.getElementById("detailLastSeen").innerText = client.last_seen;
 
-            // Hardware
             const hwDiv = document.getElementById("hardwareInfo");
             hwDiv.innerHTML = "";
             for (let key in client.hardware) {
@@ -765,39 +784,36 @@ function viewClient(uuid) {
                 }
             }
 
-            // Disks
-            const diskDiv = document.getElementById("diskInfo");
-            diskDiv.innerHTML = "";
-
-            if (client.hardware.Disks && Array.isArray(client.hardware.Disks)) {
-                client.hardware.Disks.forEach(d => {
-                    diskDiv.innerHTML += `
-                        <div class="card">
-                            <b>Drive:</b> ${d.device || d.mountpoint}<br>
-                            <b>Total:</b> ${formatMB(d.total)} MB<br>
-                            <b>Used:</b> ${formatMB(d.used)} MB<br>
-                            <b>Free:</b> ${formatMB(d.free)} MB
-                        </div>
-                    `;
-                });
-            }
-
-            // Apps
-            const appsTable = document.getElementById("appsTable");
-            appsTable.innerHTML = "";
-
-            client.apps.forEach(app => {
-                appsTable.innerHTML += `
-                    <tr>
-                        <td>${app.name}</td>
-                        <td>${app.version}</td>
-                        <td>${app.install_date}</td>
-                        <td>${formatMB(app.size_bytes)} MB</td>
-                    </tr>
-                `;
-            });
-
+            currentApps = client.apps;
+            renderApps(client.apps);
         });
+}
+
+function renderApps(apps) {
+    const appsTable = document.getElementById("appsTable");
+    appsTable.innerHTML = "";
+
+    apps.forEach(app => {
+        appsTable.innerHTML += `
+            <tr>
+                <td>${app.name}</td>
+                <td>${app.version}</td>
+                <td>${app.install_date}</td>
+                <td>${formatMB(app.size_bytes)} MB</td>
+            </tr>
+        `;
+    });
+}
+
+function filterApps() {
+    const search = document.getElementById("appSearch").value.toLowerCase();
+
+    const filtered = currentApps.filter(app =>
+        app.name.toLowerCase().includes(search) ||
+        app.version.toLowerCase().includes(search)
+    );
+
+    renderApps(filtered);
 }
 
 function downloadPDF(uuid) {
@@ -814,6 +830,7 @@ function deleteClient(uuid) {
 function goBack() {
     document.getElementById("clientDetail").style.display = "none";
     document.getElementById("clientList").style.display = "block";
+    document.getElementById("dashboardSearch").style.display = "block";
 }
 
 loadClients();
