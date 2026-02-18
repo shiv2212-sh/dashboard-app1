@@ -1532,16 +1532,15 @@
 
 
 
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request
 import sqlite3
 import json
-import csv
-import io
 import os
-from datetime import datetime
 
 app = Flask(__name__)
+
 DATABASE = "clients.db"
+
 
 # ---------------- DATABASE ---------------- #
 
@@ -1550,50 +1549,61 @@ def get_db():
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def init_db():
-    conn = get_db()
+    conn = sqlite3.connect(DATABASE)
     conn.execute("""
         CREATE TABLE IF NOT EXISTS clients (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            client_uuid TEXT PRIMARY KEY,
+            mac_address TEXT,
             hostname TEXT,
-            user TEXT,
+            last_seen TEXT,
             ip TEXT,
-            os TEXT,
-            platform TEXT,
-            ram REAL,
-            cpu TEXT,
-            cpu_cores INTEGER,
-            logical_cpus INTEGER,
-            disks TEXT,
+            hardware TEXT,
             apps TEXT,
-            created_at TEXT
+            client_ip TEXT
         )
     """)
     conn.commit()
     conn.close()
 
-# ---------------- MAIN DASHBOARD ---------------- #
+
+# Initialize DB immediately (important for Render)
+init_db()
+
+
+# ---------------- DASHBOARD ---------------- #
 
 @app.route("/")
 def dashboard():
-    view_id = request.args.get("view")
+    view_uuid = request.args.get("view")
 
     conn = get_db()
-    clients = conn.execute("SELECT * FROM clients ORDER BY id DESC").fetchall()
+
+    clients = conn.execute(
+        "SELECT * FROM clients ORDER BY last_seen DESC"
+    ).fetchall()
 
     selected_client = None
-    disks = []
+    hardware = {}
     apps = []
 
-    if view_id:
+    if view_uuid:
         selected_client = conn.execute(
-            "SELECT * FROM clients WHERE id=?",
-            (view_id,)
+            "SELECT * FROM clients WHERE client_uuid=?",
+            (view_uuid,)
         ).fetchone()
 
         if selected_client:
-            disks = json.loads(selected_client["disks"]) if selected_client["disks"] else []
-            apps = json.loads(selected_client["apps"]) if selected_client["apps"] else []
+            try:
+                hardware = json.loads(selected_client["hardware"]) if selected_client["hardware"] else {}
+            except:
+                hardware = {}
+
+            try:
+                apps = json.loads(selected_client["apps"]) if selected_client["apps"] else []
+            except:
+                apps = []
 
     conn.close()
 
@@ -1601,82 +1611,13 @@ def dashboard():
         "dashboard.html",
         clients=clients,
         selected_client=selected_client,
-        disks=disks,
+        hardware=hardware,
         apps=apps
     )
 
-# ---------------- RECEIVE CLIENT DATA ---------------- #
-
-@app.route("/api/client", methods=["POST"])
-def receive_client():
-    data = request.json
-
-    conn = get_db()
-    conn.execute("""
-        INSERT INTO clients (
-            hostname, user, ip, os, platform, ram,
-            cpu, cpu_cores, logical_cpus,
-            disks, apps, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (
-        data.get("hostname"),
-        data.get("user"),
-        request.remote_addr,
-        data.get("os"),
-        data.get("platform"),
-        data.get("ram"),
-        data.get("cpu"),
-        data.get("cpu_cores"),
-        data.get("logical_cpus"),
-        json.dumps(data.get("disks")),
-        json.dumps(data.get("apps")),
-        datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    ))
-    conn.commit()
-    conn.close()
-
-    return jsonify({"status": "success"})
-
-# ---------------- CSV EXPORT ---------------- #
-
-@app.route("/export_csv")
-def export_csv():
-    conn = get_db()
-    clients = conn.execute("SELECT * FROM clients").fetchall()
-    conn.close()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-
-    writer.writerow([
-        "ID", "Hostname", "User",
-        "IP", "OS", "RAM", "CPU", "Created At"
-    ])
-
-    for c in clients:
-        writer.writerow([
-            c["id"],
-            c["hostname"],
-            c["user"],
-            c["ip"],
-            c["os"],
-            c["ram"],
-            c["cpu"],
-            c["created_at"]
-        ])
-
-    output.seek(0)
-
-    return send_file(
-        io.BytesIO(output.getvalue().encode()),
-        mimetype="text/csv",
-        as_attachment=True,
-        download_name="clients_export.csv"
-    )
 
 # ---------------- START ---------------- #
 
 if __name__ == "__main__":
-    init_db()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
