@@ -2185,7 +2185,7 @@ def get_db():
 def init_db():
     con = get_db()
     cur = con.cursor()
-    # Clients table
+    # clients table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS clients (
             client_uuid TEXT PRIMARY KEY,
@@ -2197,16 +2197,13 @@ def init_db():
             apps JSONB
         )
     """)
-    # App history table (per app)
+    # history table for apps
     cur.execute("""
         CREATE TABLE IF NOT EXISTS app_history (
             id SERIAL PRIMARY KEY,
             client_uuid TEXT,
-            app_name TEXT,
-            version TEXT,
-            install_date TEXT,
-            size_bytes BIGINT,
-            timestamp TIMESTAMP
+            timestamp TIMESTAMP,
+            apps JSONB
         )
     """)
     con.commit()
@@ -2248,15 +2245,13 @@ def client_page(uuid):
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
-    hardware = data.get("hardware", {})
+    hardware = json.dumps(data.get("hardware", {}))
     apps = data.get("apps", [])
-
-    now = datetime.datetime.now()  # 🔥 server time
 
     con = get_db()
     cur = con.cursor()
 
-    # Insert/update client
+    # insert/update clients
     cur.execute("""
         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
@@ -2271,29 +2266,22 @@ def api_report():
         data.get("uuid"),
         data.get("mac"),
         data.get("hostname"),
-        now,
-        hardware.get("IP Address", ""),
-        json.dumps(hardware),
+        datetime.datetime.now(),
+        data.get("hardware", {}).get("IP Address"),
+        hardware,
         json.dumps(apps)
     ))
 
-    # Insert per-app history
-    for a in apps:
-        cur.execute("""
-            INSERT INTO app_history (client_uuid, app_name, version, install_date, size_bytes, timestamp)
-            VALUES (%s,%s,%s,%s,%s,%s)
-        """, (
-            data.get("uuid"),
-            a.get("name",""),
-            a.get("version",""),
-            a.get("install_date",""),
-            int(a.get("size_bytes",0)),
-            now
-        ))
+    # insert into history
+    cur.execute("""
+        INSERT INTO app_history (client_uuid, timestamp, apps)
+        VALUES (%s, %s, %s)
+    """, (data.get("uuid"), datetime.datetime.now(), json.dumps(apps)))
 
     con.commit()
     con.close()
-    return jsonify({"status":"ok"})
+
+    return jsonify({"status": "ok"})
 
 @app.route("/api/clients")
 def api_clients():
@@ -2325,8 +2313,10 @@ def api_client(uuid):
     """, (uuid,))
     r = cur.fetchone()
     con.close()
+
     if not r:
-        return jsonify({"error":"Client not found"}),404
+        return jsonify({"error": "Client not found"}), 404
+
     return jsonify({
         "uuid": r[0],
         "hostname": r[1],
@@ -2345,7 +2335,7 @@ def delete_client(uuid):
     cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
     con.commit()
     con.close()
-    return jsonify({"status":"deleted"})
+    return jsonify({"status": "deleted"})
 
 # ================= PDF =================
 
@@ -2359,6 +2349,7 @@ def download_pdf(uuid):
     """, (uuid,))
     r = cur.fetchone()
     con.close()
+
     if not r:
         return "Not found", 404
 
@@ -2371,18 +2362,16 @@ def download_pdf(uuid):
     styles = getSampleStyleSheet()
 
     elements.append(Paragraph("Client System Report", styles["Title"]))
-    elements.append(Spacer(1,15))
-
+    elements.append(Spacer(1, 15))
     elements.append(Paragraph(f"<b>Hostname:</b> {r[0]}", styles["Normal"]))
     elements.append(Paragraph(f"<b>IP:</b> {r[1]}", styles["Normal"]))
     elements.append(Paragraph(f"<b>MAC:</b> {r[2]}", styles["Normal"]))
-    elements.append(Spacer(1,20))
+    elements.append(Spacer(1, 20))
 
     # Hardware table
     hw_data = [["Key","Value"]]
     for k,v in hardware.items():
-        if k!="Disks":
-            hw_data.append([str(k), str(v)])
+        if k != "Disks": hw_data.append([str(k), str(v)])
     hw_table = Table(hw_data, repeatRows=1)
     hw_table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.grey),
@@ -2393,9 +2382,9 @@ def download_pdf(uuid):
     elements.append(Spacer(1,20))
 
     # Disks
-    disks = hardware.get("Disks",[])
+    disks = hardware.get("Disks", [])
     if disks:
-        disk_data = [["Drive","Total (GB)","Used (GB)","Free (GB)"]]
+        disk_data=[["Drive","Total (GB)","Used (GB)","Free (GB)"]]
         for d in disks:
             disk_data.append([
                 d.get("Device") or d.get("Mountpoint"),
@@ -2403,7 +2392,7 @@ def download_pdf(uuid):
                 str(d.get("Used (GB)","")),
                 str(d.get("Free (GB)",""))
             ])
-        disk_table = Table(disk_data, repeatRows=1)
+        disk_table=Table(disk_data, repeatRows=1)
         disk_table.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0),colors.grey),
             ('TEXTCOLOR',(0,0),(-1,0),colors.white),
@@ -2413,19 +2402,12 @@ def download_pdf(uuid):
         elements.append(Spacer(1,20))
 
     # Apps table
-    apps_data = [["Name","Version","Install Date","Size (MB)"]]
+    apps_data=[["Name","Version","Install Date","Size (MB)"]]
     for a in apps:
-        try:
-            size_mb = round(float(a.get("size_bytes",0))/(1024*1024),2)
-        except:
-            size_mb = 0
-        apps_data.append([
-            a.get("name",""),
-            a.get("version",""),
-            a.get("install_date",""),
-            str(size_mb)
-        ])
-    apps_table = Table(apps_data, repeatRows=1)
+        try: size_mb=round(float(a.get("size_bytes",0))/(1024*1024),2)
+        except: size_mb=0
+        apps_data.append([a.get("name",""),a.get("version",""),a.get("install_date",""),str(size_mb)])
+    apps_table=Table(apps_data, repeatRows=1)
     apps_table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.grey),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
@@ -2434,39 +2416,37 @@ def download_pdf(uuid):
     elements.append(apps_table)
 
     doc.build(elements)
+
     return Response(open(temp.name,"rb"),
                     mimetype="application/pdf",
                     headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
 
-# ================= App History =================
+# ================= APP HISTORY =================
 
-@app.route("/api/client/<uuid>/app/<app_name>/history")
-def get_app_history(uuid, app_name):
+@app.route("/api/client/<uuid>/history")
+def get_app_history():
+    uuid = request.view_args["uuid"]
+    app_name = request.args.get("app","")
     con = get_db()
     cur = con.cursor()
     cur.execute("""
-        SELECT timestamp, version, install_date, size_bytes
+        SELECT timestamp, apps
         FROM app_history
-        WHERE client_uuid=%s AND app_name=%s
+        WHERE client_uuid=%s
         ORDER BY timestamp DESC
-        LIMIT 50
-    """, (uuid, app_name))
-    rows = cur.fetchall()
+    """,(uuid,))
+    rows=cur.fetchall()
     con.close()
-    result = []
-    for r in rows:
-        result.append({
-            "timestamp": r[0].strftime("%Y-%m-%d %H:%M:%S"),
-            "version": r[1],
-            "install_date": r[2],
-            "size_bytes": r[3]
-        })
+
+    result=[]
+    for ts, apps in rows:
+        apps_list=safe_json(apps)
+        result.append({"timestamp":ts.strftime("%Y-%m-%d %H:%M:%S"),"apps":apps_list})
     return jsonify(result)
 
 # ================= RUN =================
-
 if __name__=="__main__":
-    port = int(os.environ.get("PORT",5000))
+    port=int(os.environ.get("PORT",5000))
     app.run(host="0.0.0.0", port=port)
 
 
