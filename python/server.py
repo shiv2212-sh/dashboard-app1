@@ -2174,7 +2174,6 @@ from reportlab.lib.pagesizes import A4
 import tempfile
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
 app = Flask(__name__, template_folder="templates")
 
 # ================= DATABASE =================
@@ -2197,7 +2196,7 @@ def init_db():
             apps JSONB
         )
     """)
-    # history table for apps
+    # app history table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS app_history (
             id SERIAL PRIMARY KEY,
@@ -2219,7 +2218,7 @@ OFFLINE_SECONDS = 30  # 30 seconds timeout
 def status_from_last_seen(ts):
     if not ts:
         return "Offline"
-    diff = (datetime.datetime.now() - ts).total_seconds()
+    diff = (datetime.datetime.now() - ts).total_seconds()  # LOCAL SERVER TIME
     return "Online" if diff <= OFFLINE_SECONDS else "Offline"
 
 def safe_json(v):
@@ -2245,13 +2244,14 @@ def client_page(uuid):
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
+
     hardware = json.dumps(data.get("hardware", {}))
-    apps = data.get("apps", [])
+    apps = json.dumps(data.get("apps", []))
 
     con = get_db()
     cur = con.cursor()
 
-    # insert/update clients
+    # Insert or update client info
     cur.execute("""
         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
@@ -2266,22 +2266,27 @@ def api_report():
         data.get("uuid"),
         data.get("mac"),
         data.get("hostname"),
-        datetime.datetime.now(),
+        datetime.datetime.now(),  # SERVER TIME
         data.get("hardware", {}).get("IP Address"),
         hardware,
-        json.dumps(apps)
+        apps
     ))
 
-    # insert into history
+    # Insert app history
     cur.execute("""
         INSERT INTO app_history (client_uuid, timestamp, apps)
-        VALUES (%s, %s, %s)
-    """, (data.get("uuid"), datetime.datetime.now(), json.dumps(apps)))
+        VALUES (%s,%s,%s)
+    """, (
+        data.get("uuid"),
+        datetime.datetime.now(),
+        apps
+    ))
 
     con.commit()
     con.close()
 
     return jsonify({"status": "ok"})
+
 
 @app.route("/api/clients")
 def api_clients():
@@ -2301,14 +2306,17 @@ def api_clients():
             "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
             "status": status_from_last_seen(r[4])
         })
+
     return jsonify(result)
+
 
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
     con = get_db()
     cur = con.cursor()
     cur.execute("""
-        SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
+        SELECT client_uuid, hostname, ip, mac_address,
+               last_seen, hardware, apps
         FROM clients WHERE client_uuid=%s
     """, (uuid,))
     r = cur.fetchone()
@@ -2328,6 +2336,7 @@ def api_client(uuid):
         "apps": safe_json(r[6])
     })
 
+
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
     con = get_db()
@@ -2337,7 +2346,6 @@ def delete_client(uuid):
     con.close()
     return jsonify({"status": "deleted"})
 
-# ================= PDF =================
 
 @app.route("/api/client/<uuid>/pdf")
 def download_pdf(uuid):
@@ -2363,70 +2371,86 @@ def download_pdf(uuid):
 
     elements.append(Paragraph("Client System Report", styles["Title"]))
     elements.append(Spacer(1, 15))
+
     elements.append(Paragraph(f"<b>Hostname:</b> {r[0]}", styles["Normal"]))
     elements.append(Paragraph(f"<b>IP:</b> {r[1]}", styles["Normal"]))
     elements.append(Paragraph(f"<b>MAC:</b> {r[2]}", styles["Normal"]))
     elements.append(Spacer(1, 20))
 
-    # Hardware table
-    hw_data = [["Key","Value"]]
-    for k,v in hardware.items():
-        if k != "Disks": hw_data.append([str(k), str(v)])
+    # Hardware
+    hw_data = [["Key", "Value"]]
+    for k, v in hardware.items():
+        if k != "Disks":
+            hw_data.append([str(k), str(v)])
+
     hw_table = Table(hw_data, repeatRows=1)
     hw_table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.grey),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('GRID',(0,0),(-1,-1),0.5,colors.grey)
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey),
     ]))
+
     elements.append(hw_table)
-    elements.append(Spacer(1,20))
+    elements.append(Spacer(1, 20))
 
     # Disks
     disks = hardware.get("Disks", [])
     if disks:
-        disk_data=[["Drive","Total (GB)","Used (GB)","Free (GB)"]]
+        disk_data = [["Drive", "Total (GB)", "Used (GB)", "Free (GB)"]]
         for d in disks:
             disk_data.append([
                 d.get("Device") or d.get("Mountpoint"),
-                str(d.get("Total (GB)","")),
-                str(d.get("Used (GB)","")),
-                str(d.get("Free (GB)",""))
+                str(d.get("Total (GB)", "")),
+                str(d.get("Used (GB)", "")),
+                str(d.get("Free (GB)", ""))
             ])
-        disk_table=Table(disk_data, repeatRows=1)
+
+        disk_table = Table(disk_data, repeatRows=1)
         disk_table.setStyle(TableStyle([
             ('BACKGROUND',(0,0),(-1,0),colors.grey),
             ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-            ('GRID',(0,0),(-1,-1),0.5,colors.grey)
+            ('GRID',(0,0),(-1,-1),0.5,colors.grey),
         ]))
-        elements.append(disk_table)
-        elements.append(Spacer(1,20))
 
-    # Apps table
-    apps_data=[["Name","Version","Install Date","Size (MB)"]]
+        elements.append(disk_table)
+        elements.append(Spacer(1, 20))
+
+    # Apps
+    apps_data = [["Name", "Version", "Install Date", "Size (MB)"]]
     for a in apps:
-        try: size_mb=round(float(a.get("size_bytes",0))/(1024*1024),2)
-        except: size_mb=0
-        apps_data.append([a.get("name",""),a.get("version",""),a.get("install_date",""),str(size_mb)])
-    apps_table=Table(apps_data, repeatRows=1)
+        try:
+            size_mb = round(float(a.get("size_bytes", 0)) / (1024*1024), 2)
+        except:
+            size_mb = 0.0
+        apps_data.append([
+            a.get("name",""),
+            a.get("version",""),
+            a.get("install_date",""),
+            str(size_mb)
+        ])
+
+    apps_table = Table(apps_data, repeatRows=1)
     apps_table.setStyle(TableStyle([
         ('BACKGROUND',(0,0),(-1,0),colors.grey),
         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('GRID',(0,0),(-1,-1),0.5,colors.grey)
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey),
     ]))
-    elements.append(apps_table)
 
+    elements.append(apps_table)
     doc.build(elements)
 
     return Response(open(temp.name,"rb"),
                     mimetype="application/pdf",
                     headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
 
+
 # ================= APP HISTORY =================
 
 @app.route("/api/client/<uuid>/history")
 def get_app_history():
     uuid = request.view_args["uuid"]
-    app_name = request.args.get("app","")
+    app_name = request.args.get("app","").lower()
+
     con = get_db()
     cur = con.cursor()
     cur.execute("""
@@ -2434,19 +2458,32 @@ def get_app_history():
         FROM app_history
         WHERE client_uuid=%s
         ORDER BY timestamp DESC
-    """,(uuid,))
-    rows=cur.fetchall()
+    """, (uuid,))
+    rows = cur.fetchall()
     con.close()
 
-    result=[]
+    result = []
     for ts, apps in rows:
-        apps_list=safe_json(apps)
-        result.append({"timestamp":ts.strftime("%Y-%m-%d %H:%M:%S"),"apps":apps_list})
+        apps_list = safe_json(apps)
+        if app_name:
+            apps_list = [a for a in apps_list if app_name in a.get("name","").lower()]
+            if not apps_list:
+                continue
+        result.append({
+            "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+            "apps": apps_list
+        })
+
+    if not result:
+        return jsonify({"error": "No history found for this app"}), 404
+
     return jsonify(result)
 
+
 # ================= RUN =================
-if __name__=="__main__":
-    port=int(os.environ.get("PORT",5000))
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
 
 
