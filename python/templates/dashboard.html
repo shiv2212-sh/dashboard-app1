@@ -574,41 +574,69 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Client Dashboard</title>
 <style>
-  body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f5f5f5; color:#333; }
-  body.dark { background:#121212; color:#ddd; }
-  header { padding:10px 20px; background:#007bff; color:white; display:flex; justify-content:space-between; align-items:center; }
-  header h1 { margin:0; font-size:24px; }
-  .toggle-btn { cursor:pointer; padding:5px 10px; background:#fff; color:#007bff; border-radius:5px; border:none; }
-  .container { padding:20px; }
-  input, select { padding:5px; margin-right:10px; }
-  table { width:100%; border-collapse:collapse; margin-top:20px; }
-  th, td { padding:10px; border:1px solid #ccc; text-align:left; }
-  th { background:#007bff; color:white; }
-  body.dark th { background:#1a73e8; }
-  tr:nth-child(even) { background:#f2f2f2; }
-  body.dark tr:nth-child(even) { background:#1e1e1e; }
-  button { cursor:pointer; padding:5px 10px; margin-right:5px; }
-  .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); justify-content:center; align-items:center; }
-  .modal-content { background:#fff; padding:20px; border-radius:8px; width:90%; max-width:800px; max-height:80%; overflow-y:auto; }
-  body.dark .modal-content { background:#1e1e1e; color:#ddd; }
-  .close { float:right; cursor:pointer; font-weight:bold; }
+  /* ================== General ================== */
+  body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      margin:0; padding:0;
+      background: #f4f6f8;
+      color:#333;
+      transition: background 0.3s, color 0.3s;
+  }
+  h1 { margin:0 0 20px 0; font-size:24px; }
+  button { cursor:pointer; padding:5px 12px; border:none; border-radius:4px; }
+  .primary { background:#1a73e8; color:#fff; }
+  .secondary { background:#6c757d; color:#fff; }
+  .danger { background:#dc3545; color:#fff; }
+
+  /* ================== Container ================== */
+  .container { max-width:1200px; margin:auto; padding:20px; }
+
+  /* ================== Table ================== */
+  table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+  th, td { padding:10px; text-align:left; border-bottom:1px solid #ddd; }
+  th { background:#1a73e8; color:#fff; position: sticky; top:0; }
+  tr:hover { background:#f1f1f1; }
+
+  /* ================== Toolbar ================== */
+  .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px; }
+  .toolbar input, .toolbar select { padding:6px 10px; border-radius:4px; border:1px solid #ccc; }
+
+  /* ================== Modal ================== */
+  .modal-bg {
+      position:fixed; top:0; left:0; width:100%; height:100%;
+      background:rgba(0,0,0,0.5); display:none; justify-content:center; align-items:center;
+      z-index:1000;
+  }
+  .modal {
+      background:#fff; padding:20px; border-radius:8px; max-width:800px; width:90%;
+      max-height:90vh; overflow-y:auto; box-shadow:0 0 10px rgba(0,0,0,0.3);
+  }
+  .modal h2 { margin-top:0; }
+  .modal-close { float:right; font-size:18px; font-weight:bold; background:none; border:none; cursor:pointer; }
+
+  /* ================== Dark Mode ================== */
+  body.dark { background:#121212; color:#e0e0e0; }
+  body.dark table { border-color:#444; }
+  body.dark th { background:#333; color:#fff; }
+  body.dark tr:hover { background:#1f1f1f; }
+  body.dark input, body.dark select { background:#1f1f1f; color:#e0e0e0; border:1px solid #555; }
 </style>
 </head>
 <body>
-<header>
-  <h1>Client Dashboard</h1>
-  <div>
-    <button class="toggle-btn" onclick="toggleDark()">Toggle Dark Mode</button>
-    <input type="text" id="searchInput" placeholder="Search hostname or IP..." onkeyup="filterTable()">
-    <select id="statusFilter" onchange="filterTable()">
-      <option value="">All Status</option>
-      <option value="Online">Online</option>
-      <option value="Offline">Offline</option>
-    </select>
-  </div>
-</header>
-
 <div class="container">
+  <div class="toolbar">
+      <h1>Client Dashboard</h1>
+      <div>
+        <input type="text" id="searchInput" placeholder="Search clients...">
+        <select id="statusFilter">
+          <option value="">All Status</option>
+          <option value="Online">Online</option>
+          <option value="Offline">Offline</option>
+        </select>
+        <button id="toggleDark" class="secondary">Dark Mode</button>
+      </div>
+  </div>
+
   <table id="clientsTable">
     <thead>
       <tr>
@@ -620,118 +648,158 @@
         <th>Actions</th>
       </tr>
     </thead>
-    <tbody>
-      <!-- Data populated dynamically -->
-    </tbody>
+    <tbody></tbody>
   </table>
 </div>
 
-<div class="modal" id="historyModal">
-  <div class="modal-content">
-    <span class="close" onclick="closeModal()">&times;</span>
-    <h3>App History</h3>
-    <table id="historyTable">
-      <thead>
-        <tr>
-          <th>Timestamp</th>
-          <th>Version</th>
-          <th>Install Date</th>
-          <th>Size (MB)</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
+<!-- Client Details Modal -->
+<div class="modal-bg" id="clientModal">
+  <div class="modal">
+      <button class="modal-close" onclick="closeModal('clientModal')">&times;</button>
+      <h2 id="clientName"></h2>
+      <p><b>IP:</b> <span id="clientIP"></span> | <b>MAC:</b> <span id="clientMAC"></span> | <b>Status:</b> <span id="clientStatus"></span></p>
+
+      <h3>Hardware</h3>
+      <table id="hardwareTable">
+        <thead><tr><th>Key</th><th>Value</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <h3>Apps</h3>
+      <table id="appsTable">
+        <thead><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th><th>History</th></tr></thead>
+        <tbody></tbody>
+      </table>
+
+      <div style="margin-top:10px;">
+        <button class="primary" onclick="exportPDF()">Export PDF</button>
+        <button class="secondary" onclick="exportCSV()">Export CSV</button>
+      </div>
+  </div>
+</div>
+
+<!-- App History Modal -->
+<div class="modal-bg" id="historyModal">
+  <div class="modal">
+      <button class="modal-close" onclick="closeModal('historyModal')">&times;</button>
+      <h2>App History: <span id="historyAppName"></span></h2>
+      <table id="historyTable">
+        <thead><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr></thead>
+        <tbody></tbody>
+      </table>
   </div>
 </div>
 
 <script>
 let clients = [];
-let dark = false;
+let currentClientUUID = null;
 
-function toggleDark() {
-  dark = !dark;
-  document.body.classList.toggle('dark', dark);
+// ================= Dark Mode =================
+const darkToggle = document.getElementById('toggleDark');
+darkToggle.onclick = () => {
+    document.body.classList.toggle('dark');
 }
 
-function fetchClients() {
-  fetch("/api/clients")
-    .then(res => res.json())
-    .then(data => {
-      clients = data;
-      renderTable();
+// ================= Fetch Clients =================
+async function fetchClients() {
+    const res = await fetch("/api/clients");
+    clients = await res.json();
+    renderClients();
+}
+
+function renderClients() {
+    const tbody = document.querySelector("#clientsTable tbody");
+    tbody.innerHTML = "";
+    const search = document.getElementById("searchInput").value.toLowerCase();
+    const filter = document.getElementById("statusFilter").value;
+    clients.forEach(c => {
+        if ((c.hostname.toLowerCase().includes(search) || c.ip.includes(search)) &&
+            (filter=="" || c.status==filter)) {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${c.hostname}</td>
+                <td>${c.ip}</td>
+                <td>${c.mac}</td>
+                <td>${c.last_seen}</td>
+                <td>${c.status}</td>
+                <td><button class="primary" onclick="viewClient('${c.uuid}')">View</button></td>
+            `;
+            tbody.appendChild(tr);
+        }
     });
 }
 
-function renderTable() {
-  const tbody = document.querySelector("#clientsTable tbody");
-  tbody.innerHTML = "";
-  clients.forEach(c => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${c.hostname}</td>
-      <td>${c.ip}</td>
-      <td>${c.mac}</td>
-      <td>${c.last_seen}</td>
-      <td>${c.status}</td>
-      <td>
-        <button onclick="exportCSV('${c.uuid}')">CSV</button>
-        <button onclick="exportPDF('${c.uuid}')">PDF</button>
-        <button onclick="showHistory('${c.uuid}')">History</button>
-      </td>
-    `;
-    tbody.appendChild(tr);
-  });
-  filterTable();
-}
+document.getElementById("searchInput").addEventListener("input", renderClients);
+document.getElementById("statusFilter").addEventListener("change", renderClients);
 
-function filterTable() {
-  const search = document.getElementById("searchInput").value.toLowerCase();
-  const status = document.getElementById("statusFilter").value;
-  const rows = document.querySelectorAll("#clientsTable tbody tr");
-  rows.forEach(row => {
-    const hostname = row.cells[0].textContent.toLowerCase();
-    const ip = row.cells[1].textContent.toLowerCase();
-    const rowStatus = row.cells[4].textContent;
-    const matchSearch = hostname.includes(search) || ip.includes(search);
-    const matchStatus = status === "" || rowStatus === status;
-    row.style.display = (matchSearch && matchStatus) ? "" : "none";
-  });
-}
+// ================= View Client =================
+async function viewClient(uuid) {
+    currentClientUUID = uuid;
+    const res = await fetch(`/api/client/${uuid}`);
+    const c = await res.json();
 
-function exportCSV(uuid) {
-  window.open(`/api/client/${uuid}/csv`, "_blank");
-}
+    document.getElementById("clientName").innerText = c.hostname;
+    document.getElementById("clientIP").innerText = c.ip;
+    document.getElementById("clientMAC").innerText = c.mac;
+    document.getElementById("clientStatus").innerText = c.status;
 
-function exportPDF(uuid) {
-  window.open(`/api/client/${uuid}/pdf`, "_blank");
-}
+    // Hardware
+    const hwTbody = document.querySelector("#hardwareTable tbody");
+    hwTbody.innerHTML = "";
+    for (let k in c.hardware) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${k}</td><td>${c.hardware[k]}</td>`;
+        hwTbody.appendChild(tr);
+    }
 
-function showHistory(uuid) {
-  const modal = document.getElementById("historyModal");
-  const tbody = document.querySelector("#historyTable tbody");
-  tbody.innerHTML = "";
-  fetch(`/api/client/${uuid}/history`)
-    .then(res => res.json())
-    .then(data => {
-      data.forEach(h => {
+    // Apps
+    const appsTbody = document.querySelector("#appsTable tbody");
+    appsTbody.innerHTML = "";
+    c.apps.forEach(a=>{
+        let sizeMB = 0;
+        try { sizeMB = (parseInt(a.size_bytes)/1024/1024).toFixed(2); } catch{}
         const tr = document.createElement("tr");
         tr.innerHTML = `
-          <td>${h.timestamp}</td>
-          <td>${h.version}</td>
-          <td>${h.install_date}</td>
-          <td>${(h.size_bytes/1024/1024).toFixed(2)}</td>
+            <td>${a.name}</td>
+            <td>${a.version}</td>
+            <td>${a.install_date}</td>
+            <td>${sizeMB}</td>
+            <td><button class="secondary" onclick="viewHistory('${a.name}')">History</button></td>
         `;
-        tbody.appendChild(tr);
-      });
-      modal.style.display = "flex";
+        appsTbody.appendChild(tr);
     });
+
+    openModal('clientModal');
 }
 
-function closeModal() {
-  document.getElementById("historyModal").style.display = "none";
+// ================= App History =================
+async function viewHistory(appName) {
+    const res = await fetch(`/api/client/${currentClientUUID}/history?app=${encodeURIComponent(appName)}`);
+    const history = await res.json();
+
+    document.getElementById("historyAppName").innerText = appName;
+    const tbody = document.querySelector("#historyTable tbody");
+    tbody.innerHTML = "";
+    history.forEach(h=>{
+        let sizeMB = 0;
+        try { sizeMB = (parseInt(h.size_bytes)/1024/1024).toFixed(2); } catch{}
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${h.timestamp}</td><td>${h.version}</td><td>${h.install_date}</td><td>${sizeMB}</td>`;
+        tbody.appendChild(tr);
+    });
+    openModal('historyModal');
 }
 
-window.onload = fetchClients;
+// ================= Export =================
+function exportPDF(){ window.open(`/api/client/${currentClientUUID}/pdf`); }
+function exportCSV(){ window.open(`/api/client/${currentClientUUID}/csv`); }
+
+// ================= Modal =================
+function openModal(id){ document.getElementById(id).style.display='flex'; }
+function closeModal(id){ document.getElementById(id).style.display='none'; }
+
+// ================= Initial Load =================
+fetchClients();
 </script>
 </body>
 </html>
