@@ -570,204 +570,213 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Client Dashboard</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8">
+<title>Client Dashboard</title>
 
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #f4f6f9;
-            margin: 0;
-            padding: 20px;
-            transition: background 0.3s, color 0.3s;
-        }
+<style>
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    background: #f4f6f9;
+    color: #222;
+    transition: 0.3s;
+}
 
-        h1 { margin-bottom: 20px; }
+body.dark {
+    background: #121212;
+    color: #eee;
+}
 
-        .top-bar {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+h1 {
+    margin-bottom: 20px;
+}
 
-        .btn {
-            padding: 8px 14px;
-            border-radius: 6px;
-            border: none;
-            cursor: pointer;
-            font-size: 14px;
-            text-decoration: none;
-            display: inline-block;
-        }
+.top-bar {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 20px;
+}
 
-        .btn-dark { background: #222; color: white; }
-        .btn-view { background: #007bff; color: white; }
-        .btn-delete { background: #dc3545; color: white; }
-        .btn-export { background: #28a745; color: white; }
+button, .btn {
+    padding: 8px 14px;
+    border: none;
+    background: #007bff;
+    color: white;
+    text-decoration: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
 
-        .card {
-            background: white;
-            padding: 20px;
-            margin-top: 25px;
-            border-radius: 10px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            transition: background 0.3s;
-        }
+button:hover, .btn:hover {
+    opacity: 0.85;
+}
 
-        .card h2 {
-            margin-bottom: 20px;
-            border-left: 4px solid #007bff;
-            padding-left: 10px;
-        }
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+}
 
-        .hardware-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px,1fr));
-            gap: 15px;
-        }
+th, td {
+    padding: 10px;
+    border-bottom: 1px solid #ddd;
+    text-align: left;
+}
 
-        .info-box {
-            background: #f8f9fa;
-            padding: 12px;
-            border-radius: 8px;
-            transition: background 0.3s;
-        }
+body.dark th, 
+body.dark td {
+    border-bottom: 1px solid #333;
+}
 
-        .info-box small {
-            color: #666;
-            display: block;
-            margin-bottom: 4px;
-        }
+.card {
+    margin-top: 40px;
+    padding: 20px;
+    border-radius: 10px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+}
 
-        table {
-            width: 100%;
-            border-collapse: collapse;
-        }
+body.dark .card {
+    background: #1e1e1e;
+}
 
-        th {
-            background: #007bff;
-            color: white;
-            padding: 10px;
-            text-align: left;
-        }
+.section-title {
+    margin-bottom: 15px;
+    font-size: 18px;
+    font-weight: bold;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 5px;
+}
 
-        td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-        }
+body.dark .section-title {
+    border-bottom: 1px solid #444;
+}
 
-        tr:hover { background: #f1f1f1; }
+hr {
+    margin-top: 40px;
+    border: none;
+    border-top: 1px solid #ccc;
+}
 
-        /* DARK MODE */
-
-        body.dark { background: #121212; color: #e0e0e0; }
-        body.dark .card { background: #1e1e1e; }
-        body.dark .info-box { background: #2a2a2a; }
-        body.dark th { background: #333; }
-        body.dark tr:hover { background: #2a2a2a; }
-
-    </style>
+body.dark hr {
+    border-top: 1px solid #444;
+}
+</style>
 </head>
+
 <body>
 
+<h1>Client Management Dashboard</h1>
+
 <div class="top-bar">
-    <h1>🖥 Client Dashboard</h1>
     <div>
-        <a href="/export/csv" class="btn btn-export">⬇ Export CSV</a>
-        <button class="btn btn-dark" onclick="toggleDarkMode()">🌙 Toggle Dark Mode</button>
+        <a href="/export_csv" class="btn">Export CSV</a>
+    </div>
+    <div>
+        <button onclick="toggleDark()">Toggle Dark Mode</button>
     </div>
 </div>
 
-<!-- ================= CLIENT LIST ================= -->
+<!-- CLIENT LIST TABLE -->
+
+<table>
+    <tr>
+        <th>ID</th>
+        <th>Hostname</th>
+        <th>User</th>
+        <th>IP Address</th>
+        <th>OS</th>
+        <th>RAM (GB)</th>
+        <th>Action</th>
+    </tr>
+
+    {% for client in clients %}
+    <tr>
+        <td>{{ client.id }}</td>
+        <td>{{ client.hostname }}</td>
+        <td>{{ client.user }}</td>
+        <td>{{ client.ip }}</td>
+        <td>{{ client.os }}</td>
+        <td>{{ client.ram }}</td>
+        <td>
+            <a href="/?view={{ client.id }}" class="btn">View</a>
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+
+<!-- SELECTED CLIENT DETAILS -->
+
+{% if selected_client %}
+
+<hr>
 
 <div class="card">
-    <h2>Registered Clients</h2>
-
-    {% if clients %}
-    <table>
-        <thead>
-            <tr>
-                <th>Hostname</th>
-                <th>IP</th>
-                <th>MAC</th>
-                <th>Status</th>
-                <th>Action</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for c in clients %}
-            <tr>
-                <td>{{ c.hostname }}</td>
-                <td>{{ c.ip }}</td>
-                <td>{{ c.mac }}</td>
-                <td>{{ c.status }}</td>
-                <td>
-                    <a href="/client/{{ c.uuid }}" class="btn btn-view">View</a>
-                    <a href="/delete/{{ c.uuid }}" class="btn btn-delete"
-                       onclick="return confirm('Delete this client?')">Delete</a>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    {% else %}
-        <p>No clients registered.</p>
-    {% endif %}
-</div>
-
-<!-- ================= SELECTED CLIENT DETAILS ================= -->
-
-{% if client %}
-
-<div class="card">
-    <h2>Hardware Information ({{ client.hostname }})</h2>
-
-    <div class="hardware-grid">
-        <div class="info-box"><small>Hostname</small><strong>{{ client.hostname }}</strong></div>
-        <div class="info-box"><small>User</small><strong>{{ client.user }}</strong></div>
-        <div class="info-box"><small>Operating System</small><strong>{{ client.os }}</strong></div>
-        <div class="info-box"><small>Platform</small><strong>{{ client.platform }}</strong></div>
-        <div class="info-box"><small>IP Address</small><strong>{{ client.ip_address }}</strong></div>
-        <div class="info-box"><small>CPU</small><strong>{{ client.cpu }}</strong></div>
-        <div class="info-box"><small>Physical Cores</small><strong>{{ client.cpu_cores }}</strong></div>
-        <div class="info-box"><small>Logical CPUs</small><strong>{{ client.logical_cpus }}</strong></div>
-        <div class="info-box"><small>RAM</small><strong>{{ client.ram_gb }} GB</strong></div>
-    </div>
+    <div class="section-title">Hardware Information</div>
+    <p><strong>Hostname:</strong> {{ selected_client.hostname }}</p>
+    <p><strong>User:</strong> {{ selected_client.user }}</p>
+    <p><strong>IP Address:</strong> {{ selected_client.ip }}</p>
+    <p><strong>Operating System:</strong> {{ selected_client.os }}</p>
+    <p><strong>Platform:</strong> {{ selected_client.platform }}</p>
+    <p><strong>RAM (GB):</strong> {{ selected_client.ram }}</p>
+    <p><strong>CPU:</strong> {{ selected_client.cpu }}</p>
+    <p><strong>CPU Cores:</strong> {{ selected_client.cpu_cores }}</p>
+    <p><strong>Logical CPUs:</strong> {{ selected_client.logical_cpus }}</p>
 </div>
 
 <div class="card">
-    <h2>Disk Usage</h2>
-
+    <div class="section-title">Disk Information</div>
     <table>
-        <thead>
-            <tr>
-                <th>Drive</th>
-                <th>Total (GB)</th>
-                <th>Used (GB)</th>
-                <th>Free (GB)</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for disk in client.disks %}
-            <tr>
-                <td>{{ disk.Device }}</td>
-                <td>{{ disk["Total (GB)"] }}</td>
-                <td>{{ disk["Used (GB)"] }}</td>
-                <td>{{ disk["Free (GB)"] }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
+        <tr>
+            <th>Device</th>
+            <th>Total (GB)</th>
+            <th>Used (GB)</th>
+            <th>Free (GB)</th>
+        </tr>
+        {% for disk in disks %}
+        <tr>
+            <td>{{ disk.Device }}</td>
+            <td>{{ disk["Total (GB)"] }}</td>
+            <td>{{ disk["Used (GB)"] }}</td>
+            <td>{{ disk["Free (GB)"] }}</td>
+        </tr>
+        {% endfor %}
     </table>
+</div>
+
+<div class="card">
+    <div class="section-title">Installed Applications</div>
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Version</th>
+            <th>Install Date</th>
+            <th>Disk Size</th>
+        </tr>
+        {% for app in apps %}
+        <tr>
+            <td>{{ app.name }}</td>
+            <td>{{ app.version }}</td>
+            <td>{{ app.install_date }}</td>
+            <td>{{ app.size }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+
+<div style="margin-top:20px;">
+    <a href="/" class="btn">← Back to Dashboard</a>
 </div>
 
 {% endif %}
 
 <script>
-function toggleDarkMode() {
+function toggleDark() {
     document.body.classList.toggle("dark");
 }
 </script>
 
 </body>
 </html>
-
