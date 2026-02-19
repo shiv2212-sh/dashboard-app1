@@ -2251,7 +2251,7 @@ def client_view(uuid):
 def api_report():
     data = request.json
 
-    # ✅ FIX: Always get LOCAL IP from hardware
+    # ✅ Always use LOCAL IP from hardware
     local_ip = data.get("hardware", {}).get("IP Address", "")
 
     hardware = json.dumps(data.get("hardware", {}))
@@ -2276,37 +2276,67 @@ def api_report():
         data.get("mac"),
         data.get("hostname"),
         datetime.datetime.now(),
-        local_ip,  # ✅ fixed here
+        local_ip,
         hardware,
         json.dumps(apps)
     ))
 
-    # Insert app history
+    # ================= SMART HISTORY LOGIC =================
+    # Insert only if version changed OR size changed
+
     for a in apps:
+        app_name = a.get("name")
+        version = a.get("version")
+        install_date = a.get("install_date")
+        size_bytes = int(a.get("size_bytes", 0))
+
+        # Get last recorded version + size
         cur.execute("""
-            INSERT INTO app_history (client_uuid, app_name, version, install_date, size_bytes, timestamp)
-            VALUES (%s,%s,%s,%s,%s,%s)
-        """, (
-            data.get("uuid"),
-            a.get("name"),
-            a.get("version"),
-            a.get("install_date"),
-            int(a.get("size_bytes", 0)),
-            datetime.datetime.now()
-        ))
+            SELECT version, size_bytes
+            FROM app_history
+            WHERE client_uuid=%s AND app_name=%s
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (data.get("uuid"), app_name))
+
+        last = cur.fetchone()
+
+        # Insert only if:
+        # - No previous record
+        # - OR version changed
+        # - OR size changed
+        if not last or last[0] != version or int(last[1]) != size_bytes:
+            cur.execute("""
+                INSERT INTO app_history
+                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (
+                data.get("uuid"),
+                app_name,
+                version,
+                install_date,
+                size_bytes,
+                datetime.datetime.now()
+            ))
 
     con.commit()
     con.close()
 
     return jsonify({"status": "ok"})
 
+# ================= CLIENT LIST =================
 
 @app.route("/api/clients")
 def api_clients():
     search = request.args.get("search", "").lower()
+
     con = get_db()
     cur = con.cursor()
-    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients ORDER BY last_seen DESC")
+    cur.execute("""
+        SELECT client_uuid, hostname, ip, mac_address, last_seen
+        FROM clients
+        ORDER BY last_seen DESC
+    """)
     rows = cur.fetchall()
     con.close()
 
@@ -2315,6 +2345,7 @@ def api_clients():
         hostname = r[1] or ""
         if search and search not in hostname.lower():
             continue
+
         result.append({
             "uuid": r[0],
             "hostname": hostname,
@@ -2323,14 +2354,21 @@ def api_clients():
             "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
             "status": status_from_last_seen(r[4])
         })
+
     return jsonify(result)
 
+# ================= SINGLE CLIENT =================
 
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
     con = get_db()
     cur = con.cursor()
-    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps FROM clients WHERE client_uuid=%s", (uuid,))
+
+    cur.execute("""
+        SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
+        FROM clients WHERE client_uuid=%s
+    """, (uuid,))
+
     r = cur.fetchone()
     con.close()
 
@@ -2348,17 +2386,17 @@ def api_client(uuid):
         "apps": safe_json(r[6])
     })
 
+# ================= DELETE CLIENT =================
 
-# ✅ DELETE FIX (THIS WAS MISSING)
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
     try:
         con = get_db()
         cur = con.cursor()
 
-        # delete history first
+        # Delete history first
         cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
-        # delete client
+        # Delete client
         cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
 
         con.commit()
@@ -2369,32 +2407,35 @@ def delete_client(uuid):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# ================= APP HISTORY =================
 
 @app.route("/api/client/<uuid>/history")
 def get_app_history(uuid):
     app_name = request.args.get("app")
+
     con = get_db()
     cur = con.cursor()
+
     cur.execute("""
         SELECT timestamp, version, install_date, size_bytes
         FROM app_history
         WHERE client_uuid=%s AND app_name=%s
         ORDER BY timestamp DESC
     """, (uuid, app_name))
+
     rows = cur.fetchall()
     con.close()
 
     history = []
     for r in rows:
-        ts = r[0]
         history.append({
-            "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+            "timestamp": r[0].strftime("%Y-%m-%d %H:%M:%S"),
             "version": r[1],
             "install_date": r[2],
             "size_bytes": r[3]
         })
-    return jsonify(history)
 
+    return jsonify(history)
 
 # ================= RUN =================
 
