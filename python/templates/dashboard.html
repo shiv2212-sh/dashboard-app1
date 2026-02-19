@@ -833,10 +833,38 @@ async function loadClient(){
     const data=await res.json();
 
     let hwHTML="<div class='section-title'>Hardware Info</div><div class='hardware-grid'>";
-    for(let k in data.hardware){
-        hwHTML+=`<div class="hardware-item"><b>${k}</b><br>${JSON.stringify(data.hardware[k])}</div>`;
+
+    for (let k in data.hardware) {
+
+        if (k === "Disks" && Array.isArray(data.hardware[k])) {
+
+            let disksHTML = "<div class='hardware-item'><b>Disks</b>";
+
+            data.hardware[k].forEach(disk => {
+                disksHTML += `
+                    <div style="margin-top:8px; padding:8px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                        <strong>${disk.Device}</strong><br>
+                        Total: ${disk["Total (GB)"]} GB<br>
+                        Free: ${disk["Free (GB)"]} GB
+                    </div>
+                `;
+            });
+
+            disksHTML += "</div>";
+            hwHTML += disksHTML;
+
+        } else {
+
+            hwHTML += `
+                <div class="hardware-item">
+                    <b>${k}</b><br>
+                    ${data.hardware[k]}
+                </div>
+            `;
+        }
     }
-    hwHTML+="</div>";
+
+    hwHTML += "</div>";
 
     let appsHTML="<div class='section-title'>Installed Apps</div><table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (Bytes)</th><th>History</th></tr>";
     data.apps.forEach(a=>{
@@ -895,4 +923,9 @@ window.onpopstate=checkRoute;
 
 </body>
 </html>
+
+
+
+
+
 
