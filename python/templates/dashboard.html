@@ -568,239 +568,164 @@
 
 
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Client Dashboard</title>
+<title>Client Monitoring Dashboard</title>
 <style>
-  /* ================== General ================== */
-  body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      margin:0; padding:0;
-      background: #f4f6f8;
-      color:#333;
-      transition: background 0.3s, color 0.3s;
-  }
-  h1 { margin:0 0 20px 0; font-size:24px; }
-  button { cursor:pointer; padding:5px 12px; border:none; border-radius:4px; }
-  .primary { background:#1a73e8; color:#fff; }
-  .secondary { background:#6c757d; color:#fff; }
-  .danger { background:#dc3545; color:#fff; }
-
-  /* ================== Container ================== */
-  .container { max-width:1200px; margin:auto; padding:20px; }
-
-  /* ================== Table ================== */
-  table { width:100%; border-collapse:collapse; margin-bottom:20px; }
-  th, td { padding:10px; text-align:left; border-bottom:1px solid #ddd; }
-  th { background:#1a73e8; color:#fff; position: sticky; top:0; }
-  tr:hover { background:#f1f1f1; }
-
-  /* ================== Toolbar ================== */
-  .toolbar { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; flex-wrap:wrap; gap:10px; }
-  .toolbar input, .toolbar select { padding:6px 10px; border-radius:4px; border:1px solid #ccc; }
-
-  /* ================== Modal ================== */
-  .modal-bg {
-      position:fixed; top:0; left:0; width:100%; height:100%;
-      background:rgba(0,0,0,0.5); display:none; justify-content:center; align-items:center;
-      z-index:1000;
-  }
-  .modal {
-      background:#fff; padding:20px; border-radius:8px; max-width:800px; width:90%;
-      max-height:90vh; overflow-y:auto; box-shadow:0 0 10px rgba(0,0,0,0.3);
-  }
-  .modal h2 { margin-top:0; }
-  .modal-close { float:right; font-size:18px; font-weight:bold; background:none; border:none; cursor:pointer; }
-
-  /* ================== Dark Mode ================== */
-  body.dark { background:#121212; color:#e0e0e0; }
-  body.dark table { border-color:#444; }
-  body.dark th { background:#333; color:#fff; }
-  body.dark tr:hover { background:#1f1f1f; }
-  body.dark input, body.dark select { background:#1f1f1f; color:#e0e0e0; border:1px solid #555; }
+body { margin:0; font-family:"Segoe UI",Arial,sans-serif; background:#f0f2f5; color:#333; }
+.dark { background:#121212; color:#eee; }
+header { background:#1f2937; color:white; padding:15px 30px; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 5px rgba(0,0,0,0.2); }
+header h2 {margin:0; font-weight:600; font-size:1.6em;}
+.container { padding:30px; max-width:1200px; margin:auto; }
+.card { background:white; padding:20px; border-radius:12px; box-shadow:0 6px 18px rgba(0,0,0,0.08); margin-bottom:25px; transition: transform 0.2s; }
+.card:hover { transform: translateY(-2px); }
+.dark .card { background:#1e1e1e; }
+table { width:100%; border-collapse:collapse; font-size:14px; }
+th,td { padding:12px 10px; text-align:left; }
+th { background:#2563eb; color:white; font-weight:600; }
+.dark th { background:#3333ff; }
+tr:nth-child(even){ background:#f9fafb; }
+.dark tr:nth-child(even){ background:#2c2c2c; }
+tr:hover { background:#e0e7ff; } .dark tr:hover{ background:#444; }
+button { padding:6px 14px; border:none; border-radius:6px; cursor:pointer; font-size:13px; font-weight:500; transition:0.2s; }
+button:hover{opacity:0.85;}
+.btn-view{background:#2563eb;color:white;}
+.btn-delete{background:#dc2626;color:white;}
+.btn-refresh{background:#10b981;color:white;}
+.btn-back{background:#6b7280;color:white;}
+.btn-pdf{background:#9333ea;color:white;}
+.search-box{ margin-bottom:15px; padding:10px; width:100%; max-width:350px; border-radius:8px; border:1px solid #ccc; font-size:14px; }
+.dark .search-box{ background:#333; color:white; border:1px solid #555; }
+.status-online{color:#16a34a;font-weight:bold;}
+.status-offline{color:#dc2626;font-weight:bold;}
+.section-title{ font-weight:bold; font-size:16px; margin-top:20px; margin-bottom:10px; border-bottom:1px solid #ccc; padding-bottom:5px; }
+.dark .section-title{ border-color:#555; }
+@media(max-width:768px){ table, th, td { font-size:12px; } header { flex-direction:column; gap:10px; } }
 </style>
 </head>
 <body>
+<header>
+<h2>Client Monitoring Dashboard</h2>
+<div>
+<button class="btn-refresh" onclick="manualRefresh()">Refresh</button>
+<button onclick="toggleDark()">Dark Mode</button>
+</div>
+</header>
+
 <div class="container">
-  <div class="toolbar">
-      <h1>Client Dashboard</h1>
-      <div>
-        <input type="text" id="searchInput" placeholder="Search clients...">
-        <select id="statusFilter">
-          <option value="">All Status</option>
-          <option value="Online">Online</option>
-          <option value="Offline">Offline</option>
-        </select>
-        <button id="toggleDark" class="secondary">Dark Mode</button>
-      </div>
-  </div>
-
-  <table id="clientsTable">
-    <thead>
-      <tr>
-        <th>Hostname</th>
-        <th>IP</th>
-        <th>MAC</th>
-        <th>Last Seen</th>
-        <th>Status</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+<div id="clientListPage">
+<div class="card">
+<input type="text" id="searchInput" class="search-box" placeholder="Search UUID, Hostname, IP, Status..." onkeyup="filterClients()">
+<table id="clientsTable">
+<thead><tr>
+<th>UUID</th><th>Hostname</th><th>IP</th><th>Status</th><th>Last Seen</th><th>Action</th>
+</tr></thead>
+<tbody></tbody>
+</table>
+</div>
 </div>
 
-<!-- Client Details Modal -->
-<div class="modal-bg" id="clientModal">
-  <div class="modal">
-      <button class="modal-close" onclick="closeModal('clientModal')">&times;</button>
-      <h2 id="clientName"></h2>
-      <p><b>IP:</b> <span id="clientIP"></span> | <b>MAC:</b> <span id="clientMAC"></span> | <b>Status:</b> <span id="clientStatus"></span></p>
-
-      <h3>Hardware</h3>
-      <table id="hardwareTable">
-        <thead><tr><th>Key</th><th>Value</th></tr></thead>
-        <tbody></tbody>
-      </table>
-
-      <h3>Apps</h3>
-      <table id="appsTable">
-        <thead><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th><th>History</th></tr></thead>
-        <tbody></tbody>
-      </table>
-
-      <div style="margin-top:10px;">
-        <button class="primary" onclick="exportPDF()">Export PDF</button>
-        <button class="secondary" onclick="exportCSV()">Export CSV</button>
-      </div>
-  </div>
+<div id="clientDetailPage" style="display:none;">
+<button class="btn-back" onclick="goBack()">Back</button>
+<button class="btn-pdf" onclick="downloadPDF()">Export PDF</button>
+<div class="card" id="clientInfo"></div>
+<div class="card">
+<div class="section-title">Hardware Information</div>
+<div id="hardwareSection"></div>
 </div>
-
-<!-- App History Modal -->
-<div class="modal-bg" id="historyModal">
-  <div class="modal">
-      <button class="modal-close" onclick="closeModal('historyModal')">&times;</button>
-      <h2>App History: <span id="historyAppName"></span></h2>
-      <table id="historyTable">
-        <thead><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr></thead>
-        <tbody></tbody>
-      </table>
-  </div>
+<div class="card">
+<div class="section-title">Installed Applications</div>
+<input type="text" id="appSearch" class="search-box" placeholder="Search App..." onkeyup="filterApps()">
+<div id="appsSection"></div>
+</div>
+</div>
 </div>
 
 <script>
-let clients = [];
-let currentClientUUID = null;
+let allClients=[], currentUUID="", currentApps=[];
+function toggleDark(){document.body.classList.toggle("dark");}
+function manualRefresh(){loadClients();}
 
-// ================= Dark Mode =================
-const darkToggle = document.getElementById('toggleDark');
-darkToggle.onclick = () => {
-    document.body.classList.toggle('dark');
-}
-
-// ================= Fetch Clients =================
-async function fetchClients() {
-    const res = await fetch("/api/clients");
-    clients = await res.json();
-    renderClients();
-}
-
-function renderClients() {
-    const tbody = document.querySelector("#clientsTable tbody");
-    tbody.innerHTML = "";
-    const search = document.getElementById("searchInput").value.toLowerCase();
-    const filter = document.getElementById("statusFilter").value;
-    clients.forEach(c => {
-        if ((c.hostname.toLowerCase().includes(search) || c.ip.includes(search)) &&
-            (filter=="" || c.status==filter)) {
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-                <td>${c.hostname}</td>
-                <td>${c.ip}</td>
-                <td>${c.mac}</td>
-                <td>${c.last_seen}</td>
-                <td>${c.status}</td>
-                <td><button class="primary" onclick="viewClient('${c.uuid}')">View</button></td>
-            `;
-            tbody.appendChild(tr);
-        }
+async function loadClients(){
+    const res=await fetch("/api/clients");
+    const data=await res.json();
+    allClients=data;
+    const tbody=document.querySelector("#clientsTable tbody"); tbody.innerHTML="";
+    data.forEach(c=>{
+        const row=`<tr>
+<td>${c.uuid}</td><td>${c.hostname}</td><td>${c.ip}</td>
+<td class="${c.status==='Online'?'status-online':'status-offline'}">${c.status}</td>
+<td>${c.last_seen}</td>
+<td>
+<button class="btn-view" onclick="viewClient('${c.uuid}')">View</button>
+<button class="btn-delete" onclick="deleteClient('${c.uuid}')">Delete</button>
+</td>
+</tr>`;
+        tbody.innerHTML+=row;
     });
 }
 
-document.getElementById("searchInput").addEventListener("input", renderClients);
-document.getElementById("statusFilter").addEventListener("change", renderClients);
+function filterClients(){
+    const search=document.getElementById("searchInput").value.toLowerCase();
+    document.querySelectorAll("#clientsTable tbody tr").forEach(r=>{
+        r.style.display=r.innerText.toLowerCase().includes(search)?"":"none";
+    });
+}
 
-// ================= View Client =================
-async function viewClient(uuid) {
-    currentClientUUID = uuid;
-    const res = await fetch(`/api/client/${uuid}`);
-    const c = await res.json();
+async function viewClient(uuid){
+    currentUUID=uuid;
+    const res=await fetch("/api/client/"+uuid);
+    const data=await res.json();
+    document.getElementById("clientListPage").style.display="none";
+    document.getElementById("clientDetailPage").style.display="block";
+    document.getElementById("clientInfo").innerHTML=`
+<b>UUID:</b> ${data.uuid}<br>
+<b>Hostname:</b> ${data.hostname}<br>
+<b>IP:</b> ${data.ip}<br>
+<b>Status:</b> ${data.status}<br>
+<b>Last Seen:</b> ${data.last_seen}
+`;
+    let hwHTML=""; const hw=data.hardware||{};
+    for(let key in hw){ if(key!=="Disks"){ hwHTML+=`<b>${key}:</b> ${hw[key]}<br>`; }}
+    if(hw.Disks){ hwHTML+="<br><b>Disks:</b><br>"; hw.Disks.forEach(d=>{
+        hwHTML+=`${d.Device||d.Mountpoint} (Total: ${d["Total (GB)"]} GB, Used: ${d["Used (GB)"]} GB, Free: ${d["Free (GB)"]} GB)<br>`;
+    });}
+    document.getElementById("hardwareSection").innerHTML=hwHTML;
+    currentApps=data.apps||[];
+    renderApps(currentApps);
+}
 
-    document.getElementById("clientName").innerText = c.hostname;
-    document.getElementById("clientIP").innerText = c.ip;
-    document.getElementById("clientMAC").innerText = c.mac;
-    document.getElementById("clientStatus").innerText = c.status;
+function renderApps(apps){
+    let html="<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size (MB)</th></tr>";
+    apps.forEach(a=>{let size=(a.size_bytes||0)/(1024*1024); html+=`<tr><td>${a.name}</td><td>${a.version}</td><td>${a.install_date}</td><td>${size.toFixed(2)}</td></tr>`;});
+    html+="</table>"; document.getElementById("appsSection").innerHTML=html;
+}
 
-    // Hardware
-    const hwTbody = document.querySelector("#hardwareTable tbody");
-    hwTbody.innerHTML = "";
-    for (let k in c.hardware) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${k}</td><td>${c.hardware[k]}</td>`;
-        hwTbody.appendChild(tr);
+function filterApps(){
+    const search=document.getElementById("appSearch").value.toLowerCase();
+    renderApps(currentApps.filter(a=>a.name.toLowerCase().includes(search)));
+}
+
+function goBack(){
+    document.getElementById("clientDetailPage").style.display="none";
+    document.getElementById("clientListPage").style.display="block";
+}
+
+function deleteClient(uuid){
+    if(confirm("Delete this client?")){
+        fetch("/api/client/"+uuid,{method:"DELETE"}).then(()=>loadClients());
     }
-
-    // Apps
-    const appsTbody = document.querySelector("#appsTable tbody");
-    appsTbody.innerHTML = "";
-    c.apps.forEach(a=>{
-        let sizeMB = 0;
-        try { sizeMB = (parseInt(a.size_bytes)/1024/1024).toFixed(2); } catch{}
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${a.name}</td>
-            <td>${a.version}</td>
-            <td>${a.install_date}</td>
-            <td>${sizeMB}</td>
-            <td><button class="secondary" onclick="viewHistory('${a.name}')">History</button></td>
-        `;
-        appsTbody.appendChild(tr);
-    });
-
-    openModal('clientModal');
 }
 
-// ================= App History =================
-async function viewHistory(appName) {
-    const res = await fetch(`/api/client/${currentClientUUID}/history?app=${encodeURIComponent(appName)}`);
-    const history = await res.json();
-
-    document.getElementById("historyAppName").innerText = appName;
-    const tbody = document.querySelector("#historyTable tbody");
-    tbody.innerHTML = "";
-    history.forEach(h=>{
-        let sizeMB = 0;
-        try { sizeMB = (parseInt(h.size_bytes)/1024/1024).toFixed(2); } catch{}
-        const tr = document.createElement("tr");
-        tr.innerHTML = `<td>${h.timestamp}</td><td>${h.version}</td><td>${h.install_date}</td><td>${sizeMB}</td>`;
-        tbody.appendChild(tr);
-    });
-    openModal('historyModal');
+function downloadPDF(){
+    if(!currentUUID) return alert("No client selected");
+    window.open(`/api/client/${currentUUID}/pdf`,"_blank");
 }
 
-// ================= Export =================
-function exportPDF(){ window.open(`/api/client/${currentClientUUID}/pdf`); }
-function exportCSV(){ window.open(`/api/client/${currentClientUUID}/csv`); }
-
-// ================= Modal =================
-function openModal(id){ document.getElementById(id).style.display='flex'; }
-function closeModal(id){ document.getElementById(id).style.display='none'; }
-
-// ================= Initial Load =================
-fetchClients();
+setInterval(()=>{if(document.getElementById("clientListPage").style.display!=="none"){loadClients();}},10000);
+loadClients();
 </script>
+
 </body>
 </html>
-
