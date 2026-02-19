@@ -2163,210 +2163,286 @@
 
 
 import os
+import json
+import datetime
 import psycopg2
-from flask import Flask, render_template, request, redirect, session, url_for, jsonify, send_file
-from werkzeug.security import generate_password_hash, check_password_hash
-from datetime import datetime
-from io import BytesIO
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import letter
+from flask import Flask, jsonify, render_template, request, Response, send_file
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.platypus import Table
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+import tempfile
+import csv
 
-app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "supersecretkey")
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+app = Flask(__name__, template_folder="templates")
+
+# ================= DATABASE =================
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require")
+    return psycopg2.connect(DATABASE_URL, sslmode="require" if DATABASE_URL else None)
 
-# -----------------------------
-# INIT TABLES
-# -----------------------------
 def init_db():
     con = get_db()
     cur = con.cursor()
-
-    # Users table
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(100) UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role VARCHAR(20) NOT NULL
-        );
-    """)
-
     # Clients table
     cur.execute("""
         CREATE TABLE IF NOT EXISTS clients (
-            id SERIAL PRIMARY KEY,
-            client_id TEXT NOT NULL,
-            app_version TEXT,
-            disk_usage TEXT,
+            client_uuid TEXT PRIMARY KEY,
+            mac_address TEXT,
+            hostname TEXT,
+            last_seen TIMESTAMP,
             ip TEXT,
-            install_date TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+            hardware JSONB,
+            apps JSONB
+        )
     """)
-
+    # App history table
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS app_history (
+            id SERIAL PRIMARY KEY,
+            client_uuid TEXT,
+            app_name TEXT,
+            version TEXT,
+            install_date TEXT,
+            size_bytes BIGINT,
+            timestamp TIMESTAMP
+        )
+    """)
     con.commit()
-    cur.close()
     con.close()
 
-init_db()
+if DATABASE_URL:
+    init_db()
 
-# -----------------------------
-# CREATE DEFAULT USERS (RUN ONCE)
-# -----------------------------
-@app.route("/setup-users")
-def setup_users():
-    con = get_db()
-    cur = con.cursor()
+# ================= HELPERS =================
 
+OFFLINE_SECONDS = 30  # seconds timeout
+
+def status_from_last_seen(ts):
+    if not ts:
+        return "Offline"
+    diff = (datetime.datetime.now() - ts).total_seconds()
+    return "Online" if diff <= OFFLINE_SECONDS else "Offline"
+
+def safe_json(v):
     try:
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-            ("admin", generate_password_hash("admin123"), "admin")
-        )
-
-        cur.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (%s, %s, %s)",
-            ("viewer", generate_password_hash("viewer123"), "readonly")
-        )
-
-        con.commit()
-        msg = "Admin & Readonly user created."
+        if isinstance(v, (dict, list)):
+            return v
+        return json.loads(v)
     except:
-        msg = "Users already exist."
+        return {}
 
-    cur.close()
-    con.close()
-    return msg
+# ================= ROUTES =================
 
-
-# -----------------------------
-# LOGIN
-# -----------------------------
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    if request.method == "POST":
-        username = request.form["username"]
-        password = request.form["password"]
-
-        con = get_db()
-        cur = con.cursor()
-        cur.execute("SELECT password_hash, role FROM users WHERE username=%s", (username,))
-        user = cur.fetchone()
-        cur.close()
-        con.close()
-
-        if user and check_password_hash(user[0], password):
-            session["user"] = username
-            session["role"] = user[1]
-            return redirect("/dashboard")
-        else:
-            return render_template("login.html", error="Invalid credentials")
-
-    return render_template("login.html")
-
-
-@app.route("/logout")
-def logout():
-    session.clear()
-    return redirect("/login")
-
-
-# -----------------------------
-# PROTECTED DASHBOARD
-# -----------------------------
-@app.route("/dashboard")
+@app.route("/")
 def dashboard():
-    if "user" not in session:
-        return redirect("/login")
+    return render_template("dashboard.html")
 
-    con = get_db()
-    cur = con.cursor()
-    cur.execute("SELECT * FROM clients ORDER BY updated_at DESC")
-    clients = cur.fetchall()
-    cur.close()
-    con.close()
+@app.route("/client/<uuid>")
+def client_view(uuid):
+    return render_template("dashboard.html")
 
-    return render_template(
-        "dashboard.html",
-        clients=clients,
-        role=session["role"],
-        username=session["user"]
-    )
+# ================= API =================
 
-
-# -----------------------------
-# CLIENT REPORT API (UNCHANGED)
-# -----------------------------
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
-
-    client_id = data.get("client_id")
-    app_version = data.get("app_version")
-    disk_usage = data.get("disk_usage")
-    install_date = data.get("install_date")
-
-    # Get real client IP
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+    hardware = json.dumps(data.get("hardware", {}))
+    apps = data.get("apps", [])
 
     con = get_db()
     cur = con.cursor()
 
-    # Check last entry for history logic
+    # Insert/update client
     cur.execute("""
-        SELECT app_version, disk_usage FROM clients
-        WHERE client_id=%s
-        ORDER BY updated_at DESC
-        LIMIT 1
-    """, (client_id,))
-    last = cur.fetchone()
+        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (client_uuid) DO UPDATE SET
+            mac_address=EXCLUDED.mac_address,
+            hostname=EXCLUDED.hostname,
+            last_seen=EXCLUDED.last_seen,
+            ip=EXCLUDED.ip,
+            hardware=EXCLUDED.hardware,
+            apps=EXCLUDED.apps
+    """, (
+        data.get("uuid"),
+        data.get("mac"),
+        data.get("hostname"),
+        datetime.datetime.now(),
+        data.get("ip", ""),
+        hardware,
+        json.dumps(apps)
+    ))
 
-    if not last or last[0] != app_version or last[1] != disk_usage:
+    # Insert app history
+    for a in apps:
         cur.execute("""
-            INSERT INTO clients (client_id, app_version, disk_usage, ip, install_date)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (client_id, app_version, disk_usage, ip, install_date))
-        con.commit()
+            INSERT INTO app_history (client_uuid, app_name, version, install_date, size_bytes, timestamp)
+            VALUES (%s,%s,%s,%s,%s,%s)
+        """, (
+            data.get("uuid"),
+            a.get("name"),
+            a.get("version"),
+            a.get("install_date"),
+            int(a.get("size_bytes",0)),
+            datetime.datetime.now()
+        ))
 
-    cur.close()
+    con.commit()
     con.close()
+    return jsonify({"status": "ok"})
 
-    return jsonify({"status": "success"})
-
-
-# -----------------------------
-# DELETE CLIENT (ADMIN ONLY)
-# -----------------------------
-@app.route("/delete/<int:id>")
-def delete_client(id):
-    if "user" not in session or session["role"] != "admin":
-        return "Unauthorized"
-
+@app.route("/api/clients")
+def api_clients():
+    search = request.args.get("search", "").lower()
     con = get_db()
     cur = con.cursor()
-    cur.execute("DELETE FROM clients WHERE id=%s", (id,))
-    con.commit()
-    cur.close()
+    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen FROM clients ORDER BY last_seen DESC")
+    rows = cur.fetchall()
     con.close()
 
-    return redirect("/dashboard")
+    result = []
+    for r in rows:
+        hostname = r[1] or ""
+        if search and search not in hostname.lower():
+            continue
+        result.append({
+            "uuid": r[0],
+            "hostname": hostname,
+            "ip": r[2] or "",
+            "mac": r[3] or "",
+            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+            "status": status_from_last_seen(r[4])
+        })
+    return jsonify(result)
 
+@app.route("/api/client/<uuid>")
+def api_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
+    con.close()
+    if not r:
+        return jsonify({"error":"Client not found"}), 404
 
-# -----------------------------
-# RUN
-# -----------------------------
+    return jsonify({
+        "uuid": r[0],
+        "hostname": r[1],
+        "ip": r[2],
+        "mac": r[3],
+        "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+        "status": status_from_last_seen(r[4]),
+        "hardware": safe_json(r[5]),
+        "apps": safe_json(r[6])
+    })
+
+@app.route("/api/client/<uuid>/history")
+def get_app_history(uuid):
+    app_name = request.args.get("app")
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT timestamp, version, install_date, size_bytes
+        FROM app_history
+        WHERE client_uuid=%s AND app_name=%s
+        ORDER BY timestamp DESC
+    """, (uuid, app_name))
+    rows = cur.fetchall()
+    con.close()
+
+    history = []
+    for r in rows:
+        ts = r[0]
+        if isinstance(ts, str):
+            ts = datetime.datetime.strptime(ts, "%Y-%m-%d %H:%M:%S.%f")
+        history.append({
+            "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
+            "version": r[1],
+            "install_date": r[2],
+            "size_bytes": r[3]
+        })
+    return jsonify(history)
+
+# ================= EXPORTS =================
+
+@app.route("/api/client/<uuid>/pdf")
+def download_pdf(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT hostname, ip, mac_address, hardware, apps FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
+    con.close()
+    if not r:
+        return "Not found", 404
+
+    hardware = safe_json(r[3])
+    apps = safe_json(r[4])
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(temp.name, pagesize=A4)
+    elements = []
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("Client Report", styles["Title"]))
+    elements.append(Spacer(1, 15))
+    elements.append(Paragraph(f"<b>Hostname:</b> {r[0]}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>IP:</b> {r[1]}", styles["Normal"]))
+    elements.append(Paragraph(f"<b>MAC:</b> {r[2]}", styles["Normal"]))
+    elements.append(Spacer(1, 15))
+
+    # Hardware table
+    hw_data = [["Key","Value"]]
+    for k,v in hardware.items():
+        hw_data.append([str(k), str(v)])
+    hw_table = Table(hw_data, repeatRows=1)
+    hw_table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.grey),
+                                  ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                                  ('GRID',(0,0),(-1,-1),0.5,colors.grey)]))
+    elements.append(hw_table)
+    elements.append(Spacer(1,15))
+
+    # Apps table
+    apps_data = [["Name","Version","Install Date","Size (MB)"]]
+    for a in apps:
+        size_mb = round(int(a.get("size_bytes",0))/(1024*1024),2)
+        apps_data.append([a.get("name",""), a.get("version",""), a.get("install_date",""), str(size_mb)])
+    apps_table = Table(apps_data, repeatRows=1)
+    apps_table.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,0),colors.grey),
+                                    ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+                                    ('GRID',(0,0),(-1,-1),0.5,colors.grey)]))
+    elements.append(apps_table)
+    doc.build(elements)
+
+    return Response(open(temp.name,"rb"), mimetype="application/pdf",
+                    headers={"Content-Disposition":f"attachment;filename={uuid}.pdf"})
+
+@app.route("/api/client/<uuid>/csv")
+def download_csv(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT apps FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
+    con.close()
+    if not r:
+        return "Not found", 404
+
+    apps = safe_json(r[0])
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode='w', newline='')
+    writer = csv.writer(temp)
+    writer.writerow(["Name","Version","Install Date","Size (MB)"])
+    for a in apps:
+        size_mb = round(int(a.get("size_bytes",0))/(1024*1024),2)
+        writer.writerow([a.get("name",""), a.get("version",""), a.get("install_date",""), size_mb])
+    temp.close()
+    return send_file(temp.name, mimetype="text/csv", as_attachment=True, download_name=f"{uuid}.csv")
+
+# ================= RUN =================
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
 
 
 
