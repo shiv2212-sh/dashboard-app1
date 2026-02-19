@@ -3,3 +3,4 @@ psycopg2-binary
 gunicorn
 reportlab
 fpdf==1.7.2
+Werkzeug
