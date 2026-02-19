@@ -686,7 +686,6 @@ button {
                 <tr>
                     <th>UUID</th>
                     <th>Hostname</th>
-                    <th>IP</th>
                     <th>MAC</th>
                     <th>Last Seen</th>
                     <th>Status</th>
@@ -773,7 +772,6 @@ async function loadClients(){
         <tr>
             <td>${c.uuid}</td>
             <td>${c.hostname}</td>
-            <td>${c.ip || "-"}</td>
             <td>${c.mac}</td>
             <td>${c.last_seen}</td>
             <td><span class="status ${c.status==="Online"?"online":"offline"}">${c.status}</span></td>
