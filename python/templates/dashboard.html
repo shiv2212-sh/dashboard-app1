@@ -626,6 +626,7 @@ button {
 }
 .view-btn { background:#3b82f6; color:white; }
 .pdf-btn { background:#10b981; color:white; }
+.csv-btn { background:#0ea5e9; color:white; }  /* ✅ NEW */
 .delete-btn { background:#ef4444; color:white; }
 .back-btn { background:#64748b; color:white; margin-bottom:15px; }
 .history-btn { background:#f59e0b; color:white; }
@@ -717,7 +718,6 @@ button {
 const API_BASE = "/api";
 let currentUUID = null;
 
-/* ✅ SIZE FORMATTER */
 function formatSize(bytes){
     if(!bytes || bytes === 0) return "0 MB";
     const mb = bytes / (1024 * 1024);
@@ -778,6 +778,7 @@ async function loadClients(){
             <td>
                 <button class="view-btn" onclick="navigateClient('${c.uuid}')">View</button>
                 <button class="pdf-btn" onclick="downloadPDF('${c.uuid}')">PDF</button>
+                <button class="csv-btn" onclick="downloadCSV('${c.uuid}')">CSV</button>
                 <button class="delete-btn" onclick="deleteClient('${c.uuid}')">Delete</button>
             </td>
         </tr>`;
@@ -801,11 +802,8 @@ async function loadClient(){
     let hwHTML="<div class='section-title'>Hardware Info</div><div class='hardware-grid'>";
 
     for (let k in data.hardware) {
-
         if (k === "Disks" && Array.isArray(data.hardware[k])) {
-
             let disksHTML = "<div class='hardware-item'><b>Disks</b>";
-
             data.hardware[k].forEach(disk => {
                 disksHTML += `
                     <div style="margin-top:8px; padding:8px; background:rgba(255,255,255,0.05); border-radius:8px;">
@@ -815,12 +813,9 @@ async function loadClient(){
                     </div>
                 `;
             });
-
             disksHTML += "</div>";
             hwHTML += disksHTML;
-
         } else {
-
             hwHTML += `
                 <div class="hardware-item">
                     <b>${k}</b><br>
@@ -873,7 +868,11 @@ function closeModal(){
 }
 
 function downloadPDF(uuid){
-    window.open(`/api/client/${uuid}/pdf`,"_blank");
+    window.open(`/api/client/${uuid}/export/pdf`,"_blank");
+}
+
+function downloadCSV(uuid){
+    window.open(`/api/client/${uuid}/export/csv`,"_blank");
 }
 
 async function deleteClient(uuid){
@@ -889,7 +888,6 @@ window.onpopstate=checkRoute;
 
 </body>
 </html>
-
 
 
 
