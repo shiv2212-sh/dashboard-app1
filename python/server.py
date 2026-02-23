@@ -2163,286 +2163,179 @@
 
 
 import os
-import json
-import datetime
-import psycopg2
-from flask import Flask, jsonify, render_template, request, Response, send_file
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-import tempfile
 import csv
+import io
+import psycopg2
+from flask import Flask, render_template, jsonify, request, send_file
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.pagesizes import A4
+
+app = Flask(__name__)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-app = Flask(__name__, template_folder="templates")
-
-# ================= DATABASE =================
-
+# ---------------------------
+# DATABASE CONNECTION
+# ---------------------------
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require" if DATABASE_URL else None)
+    return psycopg2.connect(DATABASE_URL)
 
-def init_db():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS clients (
-            client_uuid TEXT PRIMARY KEY,
-            mac_address TEXT,
-            hostname TEXT,
-            last_seen TIMESTAMP,
-            ip TEXT,
-            hardware JSONB,
-            apps JSONB
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS app_history (
-            id SERIAL PRIMARY KEY,
-            client_uuid TEXT,
-            app_name TEXT,
-            version TEXT,
-            install_date TEXT,
-            size_bytes BIGINT,
-            timestamp TIMESTAMP
-        )
-    """)
-
-    con.commit()
-    con.close()
-
-if DATABASE_URL:
-    init_db()
-
-# ================= HELPERS =================
-
-OFFLINE_SECONDS = 30
-
-def status_from_last_seen(ts):
-    if not ts:
-        return "Offline"
-    diff = (datetime.datetime.now() - ts).total_seconds()
-    return "Online" if diff <= OFFLINE_SECONDS else "Offline"
-
-def safe_json(v):
-    try:
-        if isinstance(v, (dict, list)):
-            return v
-        return json.loads(v)
-    except:
-        return {}
-
-# ================= ROUTES =================
-
+# ---------------------------
+# HOME
+# ---------------------------
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
-@app.route("/client/<uuid>")
-def client_view(uuid):
-    return render_template("dashboard.html")
-
-# ================= API =================
-
-@app.route("/api/report", methods=["POST"])
-def api_report():
-    data = request.json
-
-    # ✅ Always use LOCAL IP from hardware
-    local_ip = data.get("hardware", {}).get("IP Address", "")
-
-    hardware = json.dumps(data.get("hardware", {}))
-    apps = data.get("apps", [])
-
-    con = get_db()
-    cur = con.cursor()
-
-    # Insert/update client
-    cur.execute("""
-        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (client_uuid) DO UPDATE SET
-            mac_address=EXCLUDED.mac_address,
-            hostname=EXCLUDED.hostname,
-            last_seen=EXCLUDED.last_seen,
-            ip=EXCLUDED.ip,
-            hardware=EXCLUDED.hardware,
-            apps=EXCLUDED.apps
-    """, (
-        data.get("uuid"),
-        data.get("mac"),
-        data.get("hostname"),
-        datetime.datetime.now(),
-        local_ip,
-        hardware,
-        json.dumps(apps)
-    ))
-
-    # ================= SMART HISTORY LOGIC =================
-    # Insert only if version changed OR size changed
-
-    for a in apps:
-        app_name = a.get("name")
-        version = a.get("version")
-        install_date = a.get("install_date")
-        size_bytes = int(a.get("size_bytes", 0))
-
-        # Get last recorded version + size
-        cur.execute("""
-            SELECT version, size_bytes
-            FROM app_history
-            WHERE client_uuid=%s AND app_name=%s
-            ORDER BY timestamp DESC
-            LIMIT 1
-        """, (data.get("uuid"), app_name))
-
-        last = cur.fetchone()
-
-        # Insert only if:
-        # - No previous record
-        # - OR version changed
-        # - OR size changed
-        if not last or last[0] != version or int(last[1]) != size_bytes:
-            cur.execute("""
-                INSERT INTO app_history
-                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
-                VALUES (%s,%s,%s,%s,%s,%s)
-            """, (
-                data.get("uuid"),
-                app_name,
-                version,
-                install_date,
-                size_bytes,
-                datetime.datetime.now()
-            ))
-
-    con.commit()
-    con.close()
-
-    return jsonify({"status": "ok"})
-
-# ================= CLIENT LIST =================
-
+# ---------------------------
+# GET ALL CLIENTS
+# ---------------------------
 @app.route("/api/clients")
-def api_clients():
-    search = request.args.get("search", "").lower()
-
+def get_clients():
     con = get_db()
     cur = con.cursor()
+
     cur.execute("""
-        SELECT client_uuid, hostname, ip, mac_address, last_seen
+        SELECT id, hostname, ip_address, last_seen
         FROM clients
         ORDER BY last_seen DESC
     """)
+
     rows = cur.fetchall()
+    cur.close()
     con.close()
 
-    result = []
-    for r in rows:
-        hostname = r[1] or ""
-        if search and search not in hostname.lower():
-            continue
-
-        result.append({
-            "uuid": r[0],
-            "hostname": hostname,
-            "ip": r[2] or "",
-            "mac": r[3] or "",
-            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
-            "status": status_from_last_seen(r[4])
+    clients = []
+    for row in rows:
+        clients.append({
+            "id": row[0],
+            "hostname": row[1],
+            "ip": row[2],
+            "last_seen": row[3]
         })
 
-    return jsonify(result)
+    return jsonify(clients)
 
-# ================= SINGLE CLIENT =================
-
-@app.route("/api/client/<uuid>")
-def api_client(uuid):
+# ---------------------------
+# GET SINGLE CLIENT
+# ---------------------------
+@app.route("/api/client/<client_id>")
+def get_client(client_id):
     con = get_db()
     cur = con.cursor()
 
     cur.execute("""
-        SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
-        FROM clients WHERE client_uuid=%s
-    """, (uuid,))
+        SELECT hostname, ip_address, last_seen
+        FROM clients
+        WHERE id = %s
+    """, (client_id,))
 
-    r = cur.fetchone()
+    row = cur.fetchone()
+    cur.close()
     con.close()
 
-    if not r:
+    if not row:
         return jsonify({"error": "Client not found"}), 404
 
     return jsonify({
-        "uuid": r[0],
-        "hostname": r[1],
-        "ip": r[2],
-        "mac": r[3],
-        "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
-        "status": status_from_last_seen(r[4]),
-        "hardware": safe_json(r[5]),
-        "apps": safe_json(r[6])
+        "hostname": row[0],
+        "ip": row[1],
+        "last_seen": row[2]
     })
 
-# ================= DELETE CLIENT =================
-
-@app.route("/api/client/<uuid>", methods=["DELETE"])
-def delete_client(uuid):
-    try:
-        con = get_db()
-        cur = con.cursor()
-
-        # Delete history first
-        cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
-        # Delete client
-        cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
-
-        con.commit()
-        con.close()
-
-        return jsonify({"status": "deleted"}), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ================= APP HISTORY =================
-
-@app.route("/api/client/<uuid>/history")
-def get_app_history(uuid):
-    app_name = request.args.get("app")
-
+# ---------------------------
+# CSV EXPORT
+# ---------------------------
+@app.route("/export/csv")
+def export_csv():
     con = get_db()
     cur = con.cursor()
 
     cur.execute("""
-        SELECT timestamp, version, install_date, size_bytes
-        FROM app_history
-        WHERE client_uuid=%s AND app_name=%s
-        ORDER BY timestamp DESC
-    """, (uuid, app_name))
+        SELECT hostname, ip_address, last_seen
+        FROM clients
+        ORDER BY last_seen DESC
+    """)
 
     rows = cur.fetchall()
+    cur.close()
     con.close()
 
-    history = []
-    for r in rows:
-        history.append({
-            "timestamp": r[0].strftime("%Y-%m-%d %H:%M:%S"),
-            "version": r[1],
-            "install_date": r[2],
-            "size_bytes": r[3]
-        })
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Hostname", "IP Address", "Last Seen"])
 
-    return jsonify(history)
+    for row in rows:
+        writer.writerow(row)
 
-# ================= RUN =================
+    output.seek(0)
 
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name="clients.csv"
+    )
+
+# ---------------------------
+# PDF EXPORT
+# ---------------------------
+@app.route("/export/pdf")
+def export_pdf():
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT hostname, ip_address, last_seen
+        FROM clients
+        ORDER BY last_seen DESC
+    """)
+
+    rows = cur.fetchall()
+    cur.close()
+    con.close()
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    elements = []
+
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph("Client Report", styles["Title"]))
+    elements.append(Spacer(1, 20))
+
+    data = [["Hostname", "IP Address", "Last Seen"]]
+
+    for row in rows:
+        data.append([str(row[0]), str(row[1]), str(row[2])])
+
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+        ("GRID", (0, 0), (-1, -1), 1, colors.black),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+    ]))
+
+    elements.append(table)
+    doc.build(elements)
+
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="clients.pdf",
+        mimetype="application/pdf"
+    )
+
+# ---------------------------
+# START SERVER
+# ---------------------------
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
-
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 
 
