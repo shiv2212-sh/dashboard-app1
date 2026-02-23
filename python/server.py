@@ -2163,179 +2163,259 @@
 
 
 import os
-import csv
-import io
+import json
+import datetime
 import psycopg2
-from flask import Flask, render_template, jsonify, request, send_file
+import tempfile
+import csv
+
+from flask import Flask, jsonify, render_template, request, send_file
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder="templates")
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-# ---------------------------
-# DATABASE CONNECTION
-# ---------------------------
-def get_db():
-    return psycopg2.connect(DATABASE_URL)
+# ================= DATABASE =================
 
-# ---------------------------
-# HOME
-# ---------------------------
+def get_db():
+    return psycopg2.connect(DATABASE_URL, sslmode="require")
+
+def safe_json(val):
+    if isinstance(val, (dict, list)):
+        return val
+    if not val:
+        return {}
+    return json.loads(val)
+
+def get_real_ip():
+    if request.headers.get("X-Forwarded-For"):
+        return request.headers.get("X-Forwarded-For").split(",")[0]
+    return request.remote_addr
+
+def status_from_last_seen(last_seen):
+    if not last_seen:
+        return "Offline"
+    diff = (datetime.datetime.utcnow() - last_seen).total_seconds()
+    return "Online" if diff <= 60 else "Offline"
+
+# ================= DASHBOARD =================
+
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
-# ---------------------------
-# GET ALL CLIENTS
-# ---------------------------
+# ================= RECEIVE CLIENT DATA =================
+
+@app.route("/api/report", methods=["POST"])
+def receive_report():
+    data = request.json
+
+    con = get_db()
+    cur = con.cursor()
+
+    real_ip = get_real_ip()
+
+    cur.execute("""
+        INSERT INTO clients
+        (client_uuid, mac_address, hostname, ip, client_ip, last_seen, hardware, apps)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (client_uuid) DO UPDATE SET
+            mac_address=EXCLUDED.mac_address,
+            hostname=EXCLUDED.hostname,
+            ip=EXCLUDED.ip,
+            client_ip=EXCLUDED.client_ip,
+            last_seen=EXCLUDED.last_seen,
+            hardware=EXCLUDED.hardware,
+            apps=EXCLUDED.apps
+    """, (
+        data.get("uuid"),
+        data.get("mac"),
+        data.get("hostname"),
+        data.get("ip"),
+        real_ip,
+        datetime.datetime.utcnow(),
+        json.dumps(data.get("hardware")),
+        json.dumps(data.get("apps"))
+    ))
+
+    # ===== SMART HISTORY =====
+    for app_data in data.get("apps", []):
+        cur.execute("""
+            SELECT version, size_bytes
+            FROM app_history
+            WHERE client_uuid=%s AND app_name=%s
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (data.get("uuid"), app_data.get("name")))
+
+        last = cur.fetchone()
+
+        if not last or last[0] != app_data.get("version") or int(last[1]) != int(app_data.get("size_bytes", 0)):
+            cur.execute("""
+                INSERT INTO app_history
+                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (
+                data.get("uuid"),
+                app_data.get("name"),
+                app_data.get("version"),
+                app_data.get("install_date"),
+                int(app_data.get("size_bytes", 0)),
+                datetime.datetime.utcnow()
+            ))
+
+    con.commit()
+    con.close()
+
+    return jsonify({"status": "ok"})
+
+# ================= GET CLIENT LIST =================
+
 @app.route("/api/clients")
 def get_clients():
     con = get_db()
     cur = con.cursor()
 
     cur.execute("""
-        SELECT id, hostname, ip_address, last_seen
+        SELECT client_uuid, hostname, ip, mac_address, last_seen
         FROM clients
         ORDER BY last_seen DESC
     """)
 
     rows = cur.fetchall()
-    cur.close()
     con.close()
 
-    clients = []
-    for row in rows:
-        clients.append({
-            "id": row[0],
-            "hostname": row[1],
-            "ip": row[2],
-            "last_seen": row[3]
+    result = []
+    for r in rows:
+        result.append({
+            "uuid": r[0],
+            "hostname": r[1],
+            "ip": r[2],
+            "mac": r[3],
+            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "",
+            "status": status_from_last_seen(r[4])
         })
 
-    return jsonify(clients)
+    return jsonify(result)
 
-# ---------------------------
-# GET SINGLE CLIENT
-# ---------------------------
-@app.route("/api/client/<client_id>")
-def get_client(client_id):
+# ================= DELETE CLIENT =================
+
+@app.route("/api/client/<uuid>", methods=["DELETE"])
+def delete_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
+    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+
+    con.commit()
+    con.close()
+
+    return jsonify({"deleted": True})
+
+# ================= PDF EXPORT =================
+
+@app.route("/api/client/<uuid>/pdf")
+def export_pdf(uuid):
     con = get_db()
     cur = con.cursor()
 
     cur.execute("""
-        SELECT hostname, ip_address, last_seen
-        FROM clients
-        WHERE id = %s
-    """, (client_id,))
+        SELECT hostname, ip, mac_address, last_seen, hardware, apps
+        FROM clients WHERE client_uuid=%s
+    """, (uuid,))
 
     row = cur.fetchone()
-    cur.close()
     con.close()
 
     if not row:
-        return jsonify({"error": "Client not found"}), 404
+        return "Client not found", 404
 
-    return jsonify({
-        "hostname": row[0],
-        "ip": row[1],
-        "last_seen": row[2]
-    })
+    hostname, ip, mac, last_seen, hardware, apps = row
+    hardware = safe_json(hardware)
+    apps = safe_json(apps)
 
-# ---------------------------
-# CSV EXPORT
-# ---------------------------
-@app.route("/export/csv")
-def export_csv():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        SELECT hostname, ip_address, last_seen
-        FROM clients
-        ORDER BY last_seen DESC
-    """)
-
-    rows = cur.fetchall()
-    cur.close()
-    con.close()
-
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Hostname", "IP Address", "Last Seen"])
-
-    for row in rows:
-        writer.writerow(row)
-
-    output.seek(0)
-
-    return send_file(
-        io.BytesIO(output.getvalue().encode()),
-        mimetype="text/csv",
-        as_attachment=True,
-        download_name="clients.csv"
-    )
-
-# ---------------------------
-# PDF EXPORT
-# ---------------------------
-@app.route("/export/pdf")
-def export_pdf():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        SELECT hostname, ip_address, last_seen
-        FROM clients
-        ORDER BY last_seen DESC
-    """)
-
-    rows = cur.fetchall()
-    cur.close()
-    con.close()
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(temp.name, pagesize=A4)
+    styles = getSampleStyleSheet()
     elements = []
 
-    styles = getSampleStyleSheet()
     elements.append(Paragraph("Client Report", styles["Title"]))
     elements.append(Spacer(1, 20))
 
-    data = [["Hostname", "IP Address", "Last Seen"]]
+    info = [
+        ["Hostname", hostname],
+        ["IP", ip],
+        ["MAC", mac],
+        ["Last Seen", last_seen.strftime("%Y-%m-%d %H:%M:%S")]
+    ]
 
-    for row in rows:
-        data.append([str(row[0]), str(row[1]), str(row[2])])
-
-    table = Table(data)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.grey),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
-    ]))
-
+    table = Table(info)
+    table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.grey)]))
     elements.append(table)
+    elements.append(Spacer(1,20))
+
+    app_table_data = [["Name","Version","Install Date","Size (MB)"]]
+
+    for a in apps:
+        size_mb = round(int(a.get("size_bytes",0))/(1024*1024),2)
+        app_table_data.append([
+            a.get("name"),
+            a.get("version"),
+            a.get("install_date"),
+            str(size_mb)
+        ])
+
+    app_table = Table(app_table_data, repeatRows=1)
+    app_table.setStyle(TableStyle([('GRID',(0,0),(-1,-1),0.5,colors.grey)]))
+    elements.append(app_table)
+
     doc.build(elements)
 
-    buffer.seek(0)
+    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.pdf")
 
-    return send_file(
-        buffer,
-        as_attachment=True,
-        download_name="clients.pdf",
-        mimetype="application/pdf"
-    )
+# ================= CSV EXPORT =================
 
-# ---------------------------
-# START SERVER
-# ---------------------------
+@app.route("/api/client/<uuid>/csv")
+def export_csv(uuid):
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("SELECT apps FROM clients WHERE client_uuid=%s", (uuid,))
+    row = cur.fetchone()
+    con.close()
+
+    if not row:
+        return "Client not found", 404
+
+    apps = safe_json(row[0])
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", newline="")
+    writer = csv.writer(temp)
+
+    writer.writerow(["Name","Version","Install Date","Size (MB)"])
+
+    for a in apps:
+        size_mb = round(int(a.get("size_bytes",0))/(1024*1024),2)
+        writer.writerow([
+            a.get("name"),
+            a.get("version"),
+            a.get("install_date"),
+            size_mb
+        ])
+
+    temp.close()
+
+    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.csv")
+
+# ================= RUN =================
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
 
 
