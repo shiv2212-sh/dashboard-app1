@@ -2188,7 +2188,7 @@ def safe_json(val):
     if isinstance(val, (dict, list)):
         return val
     if not val:
-        return {}
+        return []
     return json.loads(val)
 
 def get_real_ip():
@@ -2213,7 +2213,6 @@ def dashboard():
 @app.route("/api/report", methods=["POST"])
 def receive_report():
     data = request.json
-
     con = get_db()
     cur = con.cursor()
 
@@ -2242,38 +2241,12 @@ def receive_report():
         json.dumps(data.get("apps"))
     ))
 
-    # ===== SMART HISTORY =====
-    for app_data in data.get("apps", []):
-        cur.execute("""
-            SELECT version, size_bytes
-            FROM app_history
-            WHERE client_uuid=%s AND app_name=%s
-            ORDER BY timestamp DESC
-            LIMIT 1
-        """, (data.get("uuid"), app_data.get("name")))
-
-        last = cur.fetchone()
-
-        if not last or last[0] != app_data.get("version") or int(last[1]) != int(app_data.get("size_bytes", 0)):
-            cur.execute("""
-                INSERT INTO app_history
-                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
-                VALUES (%s,%s,%s,%s,%s,%s)
-            """, (
-                data.get("uuid"),
-                app_data.get("name"),
-                app_data.get("version"),
-                app_data.get("install_date"),
-                int(app_data.get("size_bytes", 0)),
-                datetime.datetime.utcnow()
-            ))
-
     con.commit()
     con.close()
 
     return jsonify({"status": "ok"})
 
-# ================= GET CLIENT LIST =================
+# ================= CLIENT LIST =================
 
 @app.route("/api/clients")
 def get_clients():
@@ -2302,41 +2275,32 @@ def get_clients():
 
     return jsonify(result)
 
-# ================= DELETE CLIENT =================
+# ================= DELETE =================
 
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
     con = get_db()
     cur = con.cursor()
-
-    cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
     cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
-
     con.commit()
     con.close()
-
     return jsonify({"deleted": True})
 
-# ================= PDF EXPORT =================
+# ================= PDF FIX =================
 
 @app.route("/api/client/<uuid>/pdf")
 def export_pdf(uuid):
     con = get_db()
     cur = con.cursor()
 
-    cur.execute("""
-        SELECT hostname, ip, mac_address, last_seen, hardware, apps
-        FROM clients WHERE client_uuid=%s
-    """, (uuid,))
-
+    cur.execute("SELECT hostname, ip, mac_address, last_seen, apps FROM clients WHERE client_uuid=%s", (uuid,))
     row = cur.fetchone()
     con.close()
 
     if not row:
         return "Client not found", 404
 
-    hostname, ip, mac, last_seen, hardware, apps = row
-    hardware = safe_json(hardware)
+    hostname, ip, mac, last_seen, apps = row
     apps = safe_json(apps)
 
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
@@ -2378,13 +2342,12 @@ def export_pdf(uuid):
 
     return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.pdf")
 
-# ================= CSV EXPORT =================
+# ================= CSV FIX =================
 
 @app.route("/api/client/<uuid>/csv")
 def export_csv(uuid):
     con = get_db()
     cur = con.cursor()
-
     cur.execute("SELECT apps FROM clients WHERE client_uuid=%s", (uuid,))
     row = cur.fetchone()
     con.close()
@@ -2396,7 +2359,6 @@ def export_csv(uuid):
 
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv", mode="w", newline="")
     writer = csv.writer(temp)
-
     writer.writerow(["Name","Version","Install Date","Size (MB)"])
 
     for a in apps:
@@ -2417,5 +2379,4 @@ def export_csv(uuid):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-
 
