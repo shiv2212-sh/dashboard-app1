@@ -567,328 +567,286 @@
 
 
 
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="UTF-8">
-<title>Enterprise Client Monitoring</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+import os
+import json
+import datetime
+import psycopg2
+from flask import Flask, jsonify, render_template, request, Response, send_file
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+import tempfile
+import csv
 
-<style>
-body {
-    margin:0;
-    font-family:'Segoe UI', sans-serif;
-    background:linear-gradient(135deg,#0f172a,#1e293b);
-    color:white;
-}
-.container { padding:40px; }
-h1,h2 { font-weight:600; }
-.glass-card {
-    background:rgba(255,255,255,0.05);
-    backdrop-filter:blur(12px);
-    border-radius:16px;
-    padding:20px;
-    box-shadow:0 8px 30px rgba(0,0,0,0.4);
-    margin-bottom:25px;
-}
-.stats-grid {
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-    gap:20px;
-    margin-bottom:25px;
-}
-.stat-card { text-align:center; font-size:18px; }
-.stat-number { font-size:28px; font-weight:bold; margin-top:10px; }
-input {
-    width:100%;
-    padding:12px;
-    border-radius:10px;
-    border:none;
-    outline:none;
-    background:rgba(255,255,255,0.1);
-    color:white;
-    margin-bottom:20px;
-}
-table { width:100%; border-collapse:collapse; }
-th,td { padding:12px; text-align:left; }
-tr { border-top:1px solid rgba(255,255,255,0.08); }
-tr:hover { background:rgba(255,255,255,0.05); }
-.status { padding:6px 12px; border-radius:20px; font-size:12px; font-weight:600; }
-.online { background:rgba(16,185,129,0.2); color:#10b981; }
-.offline { background:rgba(239,68,68,0.2); color:#ef4444; }
-button {
-    padding:6px 12px;
-    border-radius:8px;
-    border:none;
-    cursor:pointer;
-    font-size:12px;
-    margin-right:5px;
-}
-.view-btn { background:#3b82f6; color:white; }
-.pdf-btn { background:#10b981; color:white; }
-.csv-btn { background:#0ea5e9; color:white; }  /* ✅ NEW */
-.delete-btn { background:#ef4444; color:white; }
-.back-btn { background:#64748b; color:white; margin-bottom:15px; }
-.history-btn { background:#f59e0b; color:white; }
-.hardware-grid {
-    display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
-    gap:15px;
-}
-.hardware-item {
-    background:rgba(255,255,255,0.06);
-    padding:15px;
-    border-radius:12px;
-}
-.modal {
-    position:fixed;
-    top:0;left:0;
-    width:100%;height:100%;
-    background:rgba(0,0,0,0.6);
-    display:none;
-    justify-content:center;
-    align-items:center;
-}
-.modal-content {
-    background:#1e293b;
-    padding:20px;
-    border-radius:12px;
-    width:80%;
-    max-height:80%;
-    overflow:auto;
-}
-</style>
-</head>
-<body>
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
-<div class="container">
-<h1 id="pageTitle">Enterprise Client Monitoring</h1>
+app = Flask(__name__, template_folder="templates")
 
-<div id="dashboardView">
-    <div class="stats-grid">
-        <div class="glass-card stat-card">
-            Total Clients
-            <div class="stat-number" id="totalCount">0</div>
-        </div>
-        <div class="glass-card stat-card">
-            Online
-            <div class="stat-number" id="onlineCount">0</div>
-        </div>
-        <div class="glass-card stat-card">
-            Offline
-            <div class="stat-number" id="offlineCount">0</div>
-        </div>
-    </div>
+# ================= DATABASE =================
 
-    <div class="glass-card">
-        <input type="text" id="searchInput" placeholder="Search..." onkeyup="loadClients()">
-        <table>
-            <thead>
-                <tr>
-                    <th>UUID</th>
-                    <th>Hostname</th>
-                    <th>MAC</th>
-                    <th>Last Seen</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="clientsTable"></tbody>
-        </table>
-    </div>
-</div>
+def get_db():
+    return psycopg2.connect(DATABASE_URL, sslmode="require" if DATABASE_URL else None)
 
-<div id="clientView" style="display:none;" class="glass-card">
-    <button class="back-btn" onclick="goBack()">← Back</button>
-    <div id="clientDetails"></div>
-</div>
-</div>
+def init_db():
+    con = get_db()
+    cur = con.cursor()
 
-<div id="historyModal" class="modal">
-    <div class="modal-content">
-        <h3>App History</h3>
-        <div id="historyBody"></div>
-        <br>
-        <button onclick="closeModal()">Close</button>
-    </div>
-</div>
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            client_uuid TEXT PRIMARY KEY,
+            mac_address TEXT,
+            hostname TEXT,
+            last_seen TIMESTAMP,
+            ip TEXT,
+            hardware JSONB,
+            apps JSONB
+        )
+    """)
 
-<script>
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS app_history (
+            id SERIAL PRIMARY KEY,
+            client_uuid TEXT,
+            app_name TEXT,
+            version TEXT,
+            install_date TEXT,
+            size_bytes BIGINT,
+            timestamp TIMESTAMP
+        )
+    """)
 
-const API_BASE = "/api";
-let currentUUID = null;
+    con.commit()
+    con.close()
 
-function formatSize(bytes){
-    if(!bytes || bytes === 0) return "0 MB";
-    const mb = bytes / (1024 * 1024);
-    if(mb < 1024){
-        return mb.toFixed(2) + " MB";
-    } else {
-        return (mb / 1024).toFixed(2) + " GB";
-    }
-}
+if DATABASE_URL:
+    init_db()
 
-function checkRoute(){
-    const path = window.location.pathname;
-    if(path.startsWith("/client/")){
-        currentUUID = path.split("/client/")[1];
-        showClientView();
-    } else {
-        showDashboardView();
-    }
-}
+# ================= HELPERS =================
 
-function showDashboardView(){
-    document.getElementById("dashboardView").style.display="block";
-    document.getElementById("clientView").style.display="none";
-    document.getElementById("pageTitle").innerText="Enterprise Client Monitoring";
-    loadClients();
-}
+OFFLINE_SECONDS = 30
 
-function showClientView(){
-    document.getElementById("dashboardView").style.display="none";
-    document.getElementById("clientView").style.display="block";
-    document.getElementById("pageTitle").innerText="Client Details";
-    loadClient();
-}
+def status_from_last_seen(ts):
+    if not ts:
+        return "Offline"
+    diff = (datetime.datetime.now() - ts).total_seconds()
+    return "Online" if diff <= OFFLINE_SECONDS else "Offline"
 
-function goBack(){
-    window.history.pushState({}, "", "/");
-    showDashboardView();
-}
+def safe_json(v):
+    try:
+        if isinstance(v, (dict, list)):
+            return v
+        return json.loads(v)
+    except:
+        return {}
 
-async function loadClients(){
-    const search=document.getElementById("searchInput")?.value||"";
-    const res=await fetch(`${API_BASE}/clients?search=${encodeURIComponent(search)}`);
-    const clients=await res.json();
+# ================= ROUTES =================
 
-    let total=clients.length,online=0,offline=0;
-    const table=document.getElementById("clientsTable");
-    table.innerHTML="";
+@app.route("/")
+def dashboard():
+    return render_template("dashboard.html")
 
-    clients.forEach(c=>{
-        if(c.status==="Online") online++; else offline++;
-        table.innerHTML+=`
-        <tr>
-            <td>${c.uuid}</td>
-            <td>${c.hostname}</td>
-            <td>${c.mac}</td>
-            <td>${c.last_seen}</td>
-            <td><span class="status ${c.status==="Online"?"online":"offline"}">${c.status}</span></td>
-            <td>
-                <button class="view-btn" onclick="navigateClient('${c.uuid}')">View</button>
-                <button class="pdf-btn" onclick="downloadPDF('${c.uuid}')">PDF</button>
-                <button class="csv-btn" onclick="downloadCSV('${c.uuid}')">CSV</button>
-                <button class="delete-btn" onclick="deleteClient('${c.uuid}')">Delete</button>
-            </td>
-        </tr>`;
-    });
+@app.route("/client/<uuid>")
+def client_view(uuid):
+    return render_template("dashboard.html")
 
-    document.getElementById("totalCount").innerText=total;
-    document.getElementById("onlineCount").innerText=online;
-    document.getElementById("offlineCount").innerText=offline;
-}
+# ================= API =================
 
-function navigateClient(uuid){
-    window.history.pushState({}, "", `/client/${uuid}`);
-    currentUUID=uuid;
-    showClientView();
-}
+@app.route("/api/report", methods=["POST"])
+def api_report():
+    data = request.json
 
-async function loadClient(){
-    const res=await fetch(`${API_BASE}/client/${currentUUID}`);
-    const data=await res.json();
+    # ✅ Always use LOCAL IP from hardware
+    local_ip = data.get("hardware", {}).get("IP Address", "")
 
-    let hwHTML="<div class='section-title'>Hardware Info</div><div class='hardware-grid'>";
+    hardware = json.dumps(data.get("hardware", {}))
+    apps = data.get("apps", [])
 
-    for (let k in data.hardware) {
-        if (k === "Disks" && Array.isArray(data.hardware[k])) {
-            let disksHTML = "<div class='hardware-item'><b>Disks</b>";
-            data.hardware[k].forEach(disk => {
-                disksHTML += `
-                    <div style="margin-top:8px; padding:8px; background:rgba(255,255,255,0.05); border-radius:8px;">
-                        <strong>${disk.Device}</strong><br>
-                        Total: ${disk["Total (GB)"]} GB<br>
-                        Free: ${disk["Free (GB)"]} GB
-                    </div>
-                `;
-            });
-            disksHTML += "</div>";
-            hwHTML += disksHTML;
-        } else {
-            hwHTML += `
-                <div class="hardware-item">
-                    <b>${k}</b><br>
-                    ${data.hardware[k]}
-                </div>
-            `;
-        }
-    }
+    con = get_db()
+    cur = con.cursor()
 
-    hwHTML += "</div>";
+    # Insert/update client
+    cur.execute("""
+        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (client_uuid) DO UPDATE SET
+            mac_address=EXCLUDED.mac_address,
+            hostname=EXCLUDED.hostname,
+            last_seen=EXCLUDED.last_seen,
+            ip=EXCLUDED.ip,
+            hardware=EXCLUDED.hardware,
+            apps=EXCLUDED.apps
+    """, (
+        data.get("uuid"),
+        data.get("mac"),
+        data.get("hostname"),
+        datetime.datetime.now(),
+        local_ip,
+        hardware,
+        json.dumps(apps)
+    ))
 
-    let appsHTML="<div class='section-title'>Installed Apps</div><table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th><th>History</th></tr>";
-    data.apps.forEach(a=>{
-        appsHTML+=`<tr>
-        <td>${a.name||""}</td>
-        <td>${a.version||""}</td>
-        <td>${a.install_date||""}</td>
-        <td>${formatSize(a.size_bytes)}</td>
-        <td><button class="history-btn" onclick="showHistory('${a.name}')">History</button></td>
-        </tr>`;
-    });
-    appsHTML+="</table>";
+    # ================= SMART HISTORY LOGIC =================
+    # Insert only if version changed OR size changed
 
-    document.getElementById("clientDetails").innerHTML=`
-        <p><b>UUID:</b> ${data.uuid}</p>
-        <p><b>Hostname:</b> ${data.hostname}</p>
-        <p><b>IP:</b> ${data.ip || "-"}</p>
-        <p><b>MAC:</b> ${data.mac}</p>
-        <p><b>Last Seen:</b> ${data.last_seen}</p>
-        ${hwHTML}
-        ${appsHTML}
-    `;
-}
+    for a in apps:
+        app_name = a.get("name")
+        version = a.get("version")
+        install_date = a.get("install_date")
+        size_bytes = int(a.get("size_bytes", 0))
 
-async function showHistory(app){
-    document.getElementById("historyModal").style.display="flex";
-    const res=await fetch(`${API_BASE}/client/${currentUUID}/history?app=${encodeURIComponent(app)}`);
-    const history=await res.json();
+        # Get last recorded version + size
+        cur.execute("""
+            SELECT version, size_bytes
+            FROM app_history
+            WHERE client_uuid=%s AND app_name=%s
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (data.get("uuid"), app_name))
 
-    let html="<table><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
-    history.forEach(h=>{
-        html+=`<tr><td>${h.timestamp}</td><td>${h.version}</td><td>${h.install_date}</td><td>${formatSize(h.size_bytes)}</td></tr>`;
-    });
-    html+="</table>";
-    document.getElementById("historyBody").innerHTML=html;
-}
+        last = cur.fetchone()
 
-function closeModal(){
-    document.getElementById("historyModal").style.display="none";
-}
+        # Insert only if:
+        # - No previous record
+        # - OR version changed
+        # - OR size changed
+        if not last or last[0] != version or int(last[1]) != size_bytes:
+            cur.execute("""
+                INSERT INTO app_history
+                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (
+                data.get("uuid"),
+                app_name,
+                version,
+                install_date,
+                size_bytes,
+                datetime.datetime.now()
+            ))
 
-function downloadPDF(uuid){
-    window.open(`/api/client/${uuid}/export/pdf`,"_blank");
-}
+    con.commit()
+    con.close()
 
-function downloadCSV(uuid){
-    window.open(`/api/client/${uuid}/export/csv`,"_blank");
-}
+    return jsonify({"status": "ok"})
 
-async function deleteClient(uuid){
-    if(!confirm("Delete this client permanently?")) return;
-    await fetch(`${API_BASE}/client/${uuid}`,{method:"DELETE"});
-    loadClients();
-}
+# ================= CLIENT LIST =================
 
-checkRoute();
-window.onpopstate=checkRoute;
+@app.route("/api/clients")
+def api_clients():
+    search = request.args.get("search", "").lower()
 
-</script>
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT client_uuid, hostname, ip, mac_address, last_seen
+        FROM clients
+        ORDER BY last_seen DESC
+    """)
+    rows = cur.fetchall()
+    con.close()
 
-</body>
-</html>
+    result = []
+    for r in rows:
+        hostname = r[1] or ""
+        if search and search not in hostname.lower():
+            continue
 
+        result.append({
+            "uuid": r[0],
+            "hostname": hostname,
+            "ip": r[2] or "",
+            "mac": r[3] or "",
+            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+            "status": status_from_last_seen(r[4])
+        })
+
+    return jsonify(result)
+
+# ================= SINGLE CLIENT =================
+
+@app.route("/api/client/<uuid>")
+def api_client(uuid):
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
+        FROM clients WHERE client_uuid=%s
+    """, (uuid,))
+
+    r = cur.fetchone()
+    con.close()
+
+    if not r:
+        return jsonify({"error": "Client not found"}), 404
+
+    return jsonify({
+        "uuid": r[0],
+        "hostname": r[1],
+        "ip": r[2],
+        "mac": r[3],
+        "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+        "status": status_from_last_seen(r[4]),
+        "hardware": safe_json(r[5]),
+        "apps": safe_json(r[6])
+    })
+
+# ================= DELETE CLIENT =================
+
+@app.route("/api/client/<uuid>", methods=["DELETE"])
+def delete_client(uuid):
+    try:
+        con = get_db()
+        cur = con.cursor()
+
+        # Delete history first
+        cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
+        # Delete client
+        cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+
+        con.commit()
+        con.close()
+
+        return jsonify({"status": "deleted"}), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# ================= APP HISTORY =================
+
+@app.route("/api/client/<uuid>/history")
+def get_app_history(uuid):
+    app_name = request.args.get("app")
+
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT timestamp, version, install_date, size_bytes
+        FROM app_history
+        WHERE client_uuid=%s AND app_name=%s
+        ORDER BY timestamp DESC
+    """, (uuid, app_name))
+
+    rows = cur.fetchall()
+    con.close()
+
+    history = []
+    for r in rows:
+        history.append({
+            "timestamp": r[0].strftime("%Y-%m-%d %H:%M:%S"),
+            "version": r[1],
+            "install_date": r[2],
+            "size_bytes": r[3]
+        })
+
+    return jsonify(history)
+
+# ================= RUN =================
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=True)
 
 
 
