@@ -2166,7 +2166,7 @@ import os
 import json
 import datetime
 import psycopg2
-from flask import Flask, jsonify, render_template, request, Response, send_file
+from flask import Flask, jsonify, request, send_file
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
@@ -2174,144 +2174,20 @@ from reportlab.lib.pagesizes import A4
 import tempfile
 import csv
 
+app = Flask(__name__)
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
-app = Flask(__name__, template_folder="templates")
-
-# ================= DATABASE =================
+# ================= DB =================
 
 def get_db():
-    return psycopg2.connect(DATABASE_URL, sslmode="require" if DATABASE_URL else None)
+    return psycopg2.connect(DATABASE_URL)
 
-def init_db():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS clients (
-            client_uuid TEXT PRIMARY KEY,
-            mac_address TEXT,
-            hostname TEXT,
-            last_seen TIMESTAMP,
-            ip TEXT,
-            hardware JSONB,
-            apps JSONB
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS app_history (
-            id SERIAL PRIMARY KEY,
-            client_uuid TEXT,
-            app_name TEXT,
-            version TEXT,
-            install_date TEXT,
-            size_bytes BIGINT,
-            timestamp TIMESTAMP
-        )
-    """)
-
-    con.commit()
-    con.close()
-
-if DATABASE_URL:
-    init_db()
-
-# ================= HELPERS =================
-
-OFFLINE_SECONDS = 30
-
-def status_from_last_seen(ts):
-    if not ts:
+def status_from_last_seen(last_seen):
+    if not last_seen:
         return "Offline"
-    diff = (datetime.datetime.now() - ts).total_seconds()
-    return "Online" if diff <= OFFLINE_SECONDS else "Offline"
-
-def safe_json(v):
-    try:
-        if isinstance(v, (dict, list)):
-            return v
-        return json.loads(v)
-    except:
-        return {}
-
-# ================= ROUTES =================
-
-@app.route("/")
-def dashboard():
-    return render_template("dashboard.html")
-
-@app.route("/client/<uuid>")
-def client_view(uuid):
-    return render_template("dashboard.html")
-
-# ================= API =================
-
-@app.route("/api/report", methods=["POST"])
-def api_report():
-    data = request.json
-    local_ip = data.get("hardware", {}).get("IP Address", "")
-    hardware = json.dumps(data.get("hardware", {}))
-    apps = data.get("apps", [])
-
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (client_uuid) DO UPDATE SET
-            mac_address=EXCLUDED.mac_address,
-            hostname=EXCLUDED.hostname,
-            last_seen=EXCLUDED.last_seen,
-            ip=EXCLUDED.ip,
-            hardware=EXCLUDED.hardware,
-            apps=EXCLUDED.apps
-    """, (
-        data.get("uuid"),
-        data.get("mac"),
-        data.get("hostname"),
-        datetime.datetime.now(),
-        local_ip,
-        hardware,
-        json.dumps(apps)
-    ))
-
-    # SMART HISTORY (UNCHANGED)
-    for a in apps:
-        app_name = a.get("name")
-        version = a.get("version")
-        install_date = a.get("install_date")
-        size_bytes = int(a.get("size_bytes", 0))
-
-        cur.execute("""
-            SELECT version, size_bytes
-            FROM app_history
-            WHERE client_uuid=%s AND app_name=%s
-            ORDER BY timestamp DESC
-            LIMIT 1
-        """, (data.get("uuid"), app_name))
-
-        last = cur.fetchone()
-
-        if not last or last[0] != version or int(last[1]) != size_bytes:
-            cur.execute("""
-                INSERT INTO app_history
-                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
-                VALUES (%s,%s,%s,%s,%s,%s)
-            """, (
-                data.get("uuid"),
-                app_name,
-                version,
-                install_date,
-                size_bytes,
-                datetime.datetime.now()
-            ))
-
-    con.commit()
-    con.close()
-
-    return jsonify({"status": "ok"})
+    delta = datetime.datetime.utcnow() - last_seen
+    return "Online" if delta.total_seconds() < 300 else "Offline"
 
 # ================= CLIENT LIST =================
 
@@ -2321,37 +2197,43 @@ def api_clients():
 
     con = get_db()
     cur = con.cursor()
-    cur.execute("""
-        SELECT client_uuid, hostname, ip, mac_address, last_seen
-        FROM clients
-        ORDER BY last_seen DESC
-    """)
+
+    if search:
+        cur.execute("""
+            SELECT client_uuid, hostname, mac_address, last_seen
+            FROM clients
+            WHERE LOWER(hostname) LIKE %s
+               OR LOWER(client_uuid) LIKE %s
+               OR LOWER(mac_address) LIKE %s
+            ORDER BY hostname
+        """, (f"%{search}%", f"%{search}%", f"%{search}%"))
+    else:
+        cur.execute("""
+            SELECT client_uuid, hostname, mac_address, last_seen
+            FROM clients
+            ORDER BY hostname
+        """)
+
     rows = cur.fetchall()
     con.close()
 
-    result = []
+    results = []
     for r in rows:
-        hostname = r[1] or ""
-        if search and search not in hostname.lower():
-            continue
-
-        result.append({
+        results.append({
             "uuid": r[0],
-            "hostname": hostname,
-            "ip": r[2] or "",
-            "mac": r[3] or "",
-            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
-            "status": status_from_last_seen(r[4])
+            "hostname": r[1] or "",
+            "mac": r[2] or "",
+            "last_seen": r[3].strftime("%Y-%m-%d %H:%M:%S") if r[3] else "Unknown",
+            "status": status_from_last_seen(r[3])
         })
 
-    return jsonify(result)
+    return jsonify(results)
 
-# ================= GLOBAL APP SEARCH (NEW FEATURE) =================
+# ================= GLOBAL APP SEARCH =================
 
 @app.route("/api/search/apps")
 def api_search_apps():
     query = request.args.get("query", "").lower()
-
     if not query:
         return jsonify([])
 
@@ -2365,10 +2247,10 @@ def api_search_apps():
             c.ip,
             c.mac_address,
             c.last_seen,
-            app->>'name' AS app_name,
-            app->>'version' AS version,
-            app->>'install_date' AS install_date,
-            app->>'size_bytes' AS size_bytes
+            app->>'name',
+            app->>'version',
+            app->>'install_date',
+            app->>'size_bytes'
         FROM clients c,
         jsonb_array_elements(c.apps) AS app
         WHERE LOWER(app->>'name') LIKE %s
@@ -2395,7 +2277,7 @@ def api_search_apps():
 
     return jsonify(results)
 
-# ================= SINGLE CLIENT =================
+# ================= CLIENT DETAILS =================
 
 @app.route("/api/client/<uuid>")
 def api_client(uuid):
@@ -2404,141 +2286,38 @@ def api_client(uuid):
 
     cur.execute("""
         SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
-        FROM clients WHERE client_uuid=%s
+        FROM clients
+        WHERE client_uuid=%s
     """, (uuid,))
 
-    r = cur.fetchone()
+    row = cur.fetchone()
     con.close()
 
-    if not r:
-        return jsonify({"error": "Client not found"}), 404
+    if not row:
+        return jsonify({})
 
     return jsonify({
-        "uuid": r[0],
-        "hostname": r[1],
-        "ip": r[2],
-        "mac": r[3],
-        "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
-        "status": status_from_last_seen(r[4]),
-        "hardware": safe_json(r[5]),
-        "apps": safe_json(r[6])
+        "uuid": row[0],
+        "hostname": row[1],
+        "ip": row[2],
+        "mac": row[3],
+        "last_seen": row[4].strftime("%Y-%m-%d %H:%M:%S") if row[4] else "Unknown",
+        "hardware": row[5] or {},
+        "apps": row[6] or []
     })
 
-# ================= CSV EXPORT =================
+# ================= DELETE =================
 
-@app.route("/api/client/<uuid>/export/csv")
-def export_csv(uuid):
+@app.route("/api/client/<uuid>", methods=["DELETE"])
+def delete_client(uuid):
     con = get_db()
     cur = con.cursor()
-
-    cur.execute("""
-        SELECT hostname, ip, mac_address, hardware, apps
-        FROM clients WHERE client_uuid=%s
-    """, (uuid,))
-
-    r = cur.fetchone()
+    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+    con.commit()
     con.close()
-
-    if not r:
-        return jsonify({"error": "Client not found"}), 404
-
-    hardware = safe_json(r[3])
-    apps = safe_json(r[4])
-
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
-    with open(temp.name, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-
-        writer.writerow(["Hostname", r[0]])
-        writer.writerow(["IP", r[1]])
-        writer.writerow(["MAC", r[2]])
-        writer.writerow([])
-        writer.writerow(["Hardware Info"])
-
-        for k, v in hardware.items():
-            writer.writerow([k, v])
-
-        writer.writerow([])
-        writer.writerow(["Installed Apps"])
-        writer.writerow(["Name", "Version", "Install Date", "Size Bytes"])
-
-        for a in apps:
-            writer.writerow([
-                a.get("name"),
-                a.get("version"),
-                a.get("install_date"),
-                a.get("size_bytes")
-            ])
-
-    return send_file(temp.name, as_attachment=True, download_name="client_export.csv")
-
-# ================= PDF EXPORT =================
-
-@app.route("/api/client/<uuid>/export/pdf")
-def export_pdf(uuid):
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        SELECT hostname, ip, mac_address, hardware, apps
-        FROM clients WHERE client_uuid=%s
-    """, (uuid,))
-
-    r = cur.fetchone()
-    con.close()
-
-    if not r:
-        return jsonify({"error": "Client not found"}), 404
-
-    hardware = safe_json(r[3])
-    apps = safe_json(r[4])
-
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-
-    doc = SimpleDocTemplate(temp.name, pagesize=A4)
-    elements = []
-    styles = getSampleStyleSheet()
-
-    elements.append(Paragraph(f"Client Report - {r[0]}", styles["Heading1"]))
-    elements.append(Spacer(1, 12))
-
-    elements.append(Paragraph(f"IP: {r[1]}", styles["Normal"]))
-    elements.append(Paragraph(f"MAC: {r[2]}", styles["Normal"]))
-    elements.append(Spacer(1, 12))
-
-    elements.append(Paragraph("Hardware Information", styles["Heading2"]))
-    elements.append(Spacer(1, 8))
-
-    for k, v in hardware.items():
-        elements.append(Paragraph(f"{k}: {v}", styles["Normal"]))
-
-    elements.append(Spacer(1, 20))
-
-    elements.append(Paragraph("Installed Applications", styles["Heading2"]))
-    elements.append(Spacer(1, 10))
-
-    data = [["Name", "Version", "Install Date", "Size Bytes"]]
-    for a in apps:
-        data.append([
-            a.get("name"),
-            a.get("version"),
-            a.get("install_date"),
-            str(a.get("size_bytes"))
-        ])
-
-    table = Table(data, repeatRows=1)
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.grey),
-        ("GRID", (0,0), (-1,-1), 1, colors.black)
-    ]))
-
-    elements.append(table)
-    doc.build(elements)
-
-    return send_file(temp.name, as_attachment=True, download_name="client_report.pdf")
+    return jsonify({"status":"deleted"})
 
 # ================= RUN =================
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run()
