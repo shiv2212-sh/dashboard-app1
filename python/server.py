@@ -2217,6 +2217,77 @@ def dashboard():
 def client_view(uuid):
     return render_template("dashboard.html")
 
+# ================= API REPORT (POST) =================
+
+@app.route("/api/report", methods=["POST"])
+def api_report():
+    data = request.json
+    if not data:
+        return jsonify({"error": "No JSON data received"}), 400
+
+    local_ip = data.get("hardware", {}).get("IP Address", "")
+    hardware = json.dumps(data.get("hardware", {}))
+    apps = data.get("apps", [])
+
+    con = get_db()
+    cur = con.cursor()
+
+    # Insert/update client
+    cur.execute("""
+        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
+        VALUES (%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (client_uuid) DO UPDATE SET
+            mac_address=EXCLUDED.mac_address,
+            hostname=EXCLUDED.hostname,
+            last_seen=EXCLUDED.last_seen,
+            ip=EXCLUDED.ip,
+            hardware=EXCLUDED.hardware,
+            apps=EXCLUDED.apps
+    """, (
+        data.get("uuid"),
+        data.get("mac"),
+        data.get("hostname"),
+        datetime.datetime.now(),
+        local_ip,
+        hardware,
+        json.dumps(apps)
+    ))
+
+    # Insert into app_history only if version/size changed
+    for a in apps:
+        app_name = a.get("name")
+        version = a.get("version")
+        install_date = a.get("install_date")
+        size_bytes = int(a.get("size_bytes", 0))
+
+        cur.execute("""
+            SELECT version, size_bytes
+            FROM app_history
+            WHERE client_uuid=%s AND app_name=%s
+            ORDER BY timestamp DESC
+            LIMIT 1
+        """, (data.get("uuid"), app_name))
+
+        last = cur.fetchone()
+        if not last or last[0] != version or int(last[1]) != size_bytes:
+            cur.execute("""
+                INSERT INTO app_history
+                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
+                VALUES (%s,%s,%s,%s,%s,%s)
+            """, (
+                data.get("uuid"),
+                app_name,
+                version,
+                install_date,
+                size_bytes,
+                datetime.datetime.now()
+            ))
+
+    con.commit()
+    con.close()
+
+    return jsonify({"status": "ok"})
+
 # ================= CLIENT LIST =================
 
 @app.route("/api/clients")
