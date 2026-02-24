@@ -2199,6 +2199,14 @@ def safe_json(v):
     except:
         return {}
 
+def format_size(bytes_value):
+    if not bytes_value:
+        return "0 MB"
+    mb = bytes_value / (1024 * 1024)
+    if mb < 1024:
+        return f"{mb:.2f} MB"
+    return f"{mb/1024:.2f} GB"
+
 # ================= ROUTES =================
 
 @app.route("/")
@@ -2323,11 +2331,11 @@ def get_app_history(uuid):
 
     return jsonify(history)
 
-# ================= GLOBAL APP SEARCH (FIXED) =================
+# ================= GLOBAL APP SEARCH =================
 
 @app.route("/api/search/apps")
 def global_app_search():
-    query = request.args.get("name", "").lower()   # ✅ FIXED
+    query = request.args.get("name", "").lower()
 
     if not query:
         return jsonify([])
@@ -2343,7 +2351,6 @@ def global_app_search():
     for r in rows:
         uuid = r[0]
         hostname = r[1] or ""
-        last_seen = r[2]
         apps = safe_json(r[3])
 
         for app in apps:
@@ -2365,29 +2372,57 @@ def export_csv(uuid):
     con = get_db()
     cur = con.cursor()
 
-    cur.execute("SELECT apps FROM clients WHERE client_uuid=%s", (uuid,))
+    cur.execute("""
+        SELECT hostname, ip, mac_address, last_seen, hardware, apps
+        FROM clients WHERE client_uuid=%s
+    """, (uuid,))
     row = cur.fetchone()
     con.close()
 
     if not row:
         return jsonify({"error": "Client not found"}), 404
 
-    apps = safe_json(row[0])
+    hostname, ip, mac, last_seen, hardware_raw, apps_raw = row
+    hardware = safe_json(hardware_raw)
+    apps = safe_json(apps_raw)
 
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+
     with open(temp.name, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Name", "Version", "Install Date", "Size Bytes"])
+
+        writer.writerow(["CLIENT INFORMATION"])
+        writer.writerow(["UUID", uuid])
+        writer.writerow(["Hostname", hostname])
+        writer.writerow(["IP", ip])
+        writer.writerow(["MAC", mac])
+        writer.writerow(["Last Seen", last_seen])
+
+        writer.writerow([])
+        writer.writerow(["HARDWARE DETAILS"])
+        for k, v in hardware.items():
+            if k == "Disks" and isinstance(v, list):
+                for disk in v:
+                    writer.writerow([
+                        f"Disk {disk.get('Device','')}",
+                        f"Total: {disk.get('Total (GB)','')}GB | Free: {disk.get('Free (GB)','')}GB"
+                    ])
+            else:
+                writer.writerow([k, v])
+
+        writer.writerow([])
+        writer.writerow(["INSTALLED APPLICATIONS"])
+        writer.writerow(["Name", "Version", "Install Date", "Size"])
 
         for a in apps:
             writer.writerow([
                 a.get("name"),
                 a.get("version"),
                 a.get("install_date"),
-                a.get("size_bytes")
+                format_size(int(a.get("size_bytes", 0)))
             ])
 
-    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.csv")
+    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}_report.csv")
 
 # ================= EXPORT PDF =================
 
@@ -2396,42 +2431,95 @@ def export_pdf(uuid):
     con = get_db()
     cur = con.cursor()
 
-    cur.execute("SELECT apps FROM clients WHERE client_uuid=%s", (uuid,))
+    cur.execute("""
+        SELECT hostname, ip, mac_address, last_seen, hardware, apps
+        FROM clients WHERE client_uuid=%s
+    """, (uuid,))
     row = cur.fetchone()
     con.close()
 
     if not row:
         return jsonify({"error": "Client not found"}), 404
 
-    apps = safe_json(row[0])
+    hostname, ip, mac, last_seen, hardware_raw, apps_raw = row
+    hardware = safe_json(hardware_raw)
+    apps = safe_json(apps_raw)
 
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     doc = SimpleDocTemplate(temp.name, pagesize=A4)
     elements = []
-
     styles = getSampleStyleSheet()
-    elements.append(Paragraph(f"Installed Applications - {uuid}", styles["Title"]))
-    elements.append(Spacer(1, 12))
 
-    data = [["Name", "Version", "Install Date", "Size Bytes"]]
-    for a in apps:
-        data.append([
-            a.get("name"),
-            a.get("version"),
-            a.get("install_date"),
-            str(a.get("size_bytes"))
-        ])
+    elements.append(Paragraph(f"Client Report - {uuid}", styles["Title"]))
+    elements.append(Spacer(1, 15))
 
-    table = Table(data)
-    table.setStyle(TableStyle([
-        ('BACKGROUND', (0,0), (-1,0), colors.grey),
-        ('GRID', (0,0), (-1,-1), 0.5, colors.black)
+    # Client Info
+    client_info = [
+        ["UUID", uuid],
+        ["Hostname", hostname],
+        ["IP Address", ip],
+        ["MAC Address", mac],
+        ["Last Seen", last_seen.strftime("%Y-%m-%d %H:%M:%S") if last_seen else "Unknown"]
+    ]
+
+    info_table = Table(client_info, colWidths=[150, 350])
+    info_table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
     ]))
 
-    elements.append(table)
+    elements.append(Paragraph("Client Information", styles["Heading2"]))
+    elements.append(Spacer(1, 8))
+    elements.append(info_table)
+    elements.append(Spacer(1, 20))
+
+    # Hardware
+    elements.append(Paragraph("Hardware Details", styles["Heading2"]))
+    elements.append(Spacer(1, 8))
+
+    hw_data = []
+    for k, v in hardware.items():
+        if k == "Disks" and isinstance(v, list):
+            for disk in v:
+                hw_data.append([
+                    f"Disk {disk.get('Device','')}",
+                    f"Total: {disk.get('Total (GB)','')}GB | Free: {disk.get('Free (GB)','')}GB"
+                ])
+        else:
+            hw_data.append([k, str(v)])
+
+    if hw_data:
+        hw_table = Table(hw_data, colWidths=[200, 300])
+        hw_table.setStyle(TableStyle([
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ]))
+        elements.append(hw_table)
+
+    elements.append(Spacer(1, 20))
+
+    # Apps
+    elements.append(Paragraph("Installed Applications", styles["Heading2"]))
+    elements.append(Spacer(1, 8))
+
+    app_data = [["Name", "Version", "Install Date", "Size"]]
+    for a in apps:
+        app_data.append([
+            a.get("name",""),
+            a.get("version",""),
+            a.get("install_date",""),
+            format_size(int(a.get("size_bytes", 0)))
+        ])
+
+    app_table = Table(app_data, repeatRows=1)
+    app_table.setStyle(TableStyle([
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
+    ]))
+
+    elements.append(app_table)
+
     doc.build(elements)
 
-    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.pdf")
+    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}_report.pdf")
 
 # ================= RUN =================
 
