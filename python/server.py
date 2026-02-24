@@ -2166,7 +2166,7 @@ import os
 import json
 import datetime
 import psycopg2
-from flask import Flask, jsonify, render_template, request, Response, send_file
+from flask import Flask, jsonify, render_template, request, send_file
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
@@ -2235,6 +2235,14 @@ def safe_json(v):
     except:
         return {}
 
+def format_size(bytes_val):
+    if not bytes_val:
+        return "0 MB"
+    mb = bytes_val / (1024*1024)
+    if mb < 1024:
+        return f"{mb:.2f} MB"
+    return f"{mb/1024:.2f} GB"
+
 # ================= ROUTES =================
 
 @app.route("/")
@@ -2250,8 +2258,6 @@ def client_view(uuid):
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
-
-    # ✅ Always use LOCAL IP from hardware
     local_ip = data.get("hardware", {}).get("IP Address", "")
 
     hardware = json.dumps(data.get("hardware", {}))
@@ -2260,7 +2266,6 @@ def api_report():
     con = get_db()
     cur = con.cursor()
 
-    # Insert/update client
     cur.execute("""
         INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
         VALUES (%s,%s,%s,%s,%s,%s,%s)
@@ -2281,30 +2286,20 @@ def api_report():
         json.dumps(apps)
     ))
 
-    # ================= SMART HISTORY LOGIC =================
-    # Insert only if version changed OR size changed
-
+    # App history
     for a in apps:
         app_name = a.get("name")
         version = a.get("version")
         install_date = a.get("install_date")
         size_bytes = int(a.get("size_bytes", 0))
 
-        # Get last recorded version + size
         cur.execute("""
-            SELECT version, size_bytes
-            FROM app_history
+            SELECT version, size_bytes FROM app_history
             WHERE client_uuid=%s AND app_name=%s
-            ORDER BY timestamp DESC
-            LIMIT 1
+            ORDER BY timestamp DESC LIMIT 1
         """, (data.get("uuid"), app_name))
-
         last = cur.fetchone()
 
-        # Insert only if:
-        # - No previous record
-        # - OR version changed
-        # - OR size changed
         if not last or last[0] != version or int(last[1]) != size_bytes:
             cur.execute("""
                 INSERT INTO app_history
@@ -2321,7 +2316,6 @@ def api_report():
 
     con.commit()
     con.close()
-
     return jsonify({"status": "ok"})
 
 # ================= CLIENT LIST =================
@@ -2329,13 +2323,11 @@ def api_report():
 @app.route("/api/clients")
 def api_clients():
     search = request.args.get("search", "").lower()
-
     con = get_db()
     cur = con.cursor()
     cur.execute("""
         SELECT client_uuid, hostname, ip, mac_address, last_seen
-        FROM clients
-        ORDER BY last_seen DESC
+        FROM clients ORDER BY last_seen DESC
     """)
     rows = cur.fetchall()
     con.close()
@@ -2345,7 +2337,6 @@ def api_clients():
         hostname = r[1] or ""
         if search and search not in hostname.lower():
             continue
-
         result.append({
             "uuid": r[0],
             "hostname": hostname,
@@ -2354,7 +2345,6 @@ def api_clients():
             "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
             "status": status_from_last_seen(r[4])
         })
-
     return jsonify(result)
 
 # ================= SINGLE CLIENT =================
@@ -2363,15 +2353,12 @@ def api_clients():
 def api_client(uuid):
     con = get_db()
     cur = con.cursor()
-
     cur.execute("""
         SELECT client_uuid, hostname, ip, mac_address, last_seen, hardware, apps
         FROM clients WHERE client_uuid=%s
     """, (uuid,))
-
     r = cur.fetchone()
     con.close()
-
     if not r:
         return jsonify({"error": "Client not found"}), 404
 
@@ -2393,17 +2380,11 @@ def delete_client(uuid):
     try:
         con = get_db()
         cur = con.cursor()
-
-        # Delete history first
         cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
-        # Delete client
         cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
-
         con.commit()
         con.close()
-
-        return jsonify({"status": "deleted"}), 200
-
+        return jsonify({"status": "deleted"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -2412,37 +2393,144 @@ def delete_client(uuid):
 @app.route("/api/client/<uuid>/history")
 def get_app_history(uuid):
     app_name = request.args.get("app")
-
     con = get_db()
     cur = con.cursor()
-
     cur.execute("""
         SELECT timestamp, version, install_date, size_bytes
         FROM app_history
         WHERE client_uuid=%s AND app_name=%s
         ORDER BY timestamp DESC
     """, (uuid, app_name))
-
     rows = cur.fetchall()
     con.close()
-
-    history = []
-    for r in rows:
-        history.append({
-            "timestamp": r[0].strftime("%Y-%m-%d %H:%M:%S"),
-            "version": r[1],
-            "install_date": r[2],
-            "size_bytes": r[3]
-        })
-
+    history = [{"timestamp": r[0].strftime("%Y-%m-%d %H:%M:%S"),
+                "version": r[1],
+                "install_date": r[2],
+                "size_bytes": r[3]} for r in rows]
     return jsonify(history)
+
+# ================= GLOBAL APP SEARCH =================
+
+@app.route("/api/search/apps")
+def global_app_search():
+    name = request.args.get("name", "").lower()
+    if not name:
+        return jsonify([])
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("""
+        SELECT c.hostname, c.client_uuid, a->>'name' AS app_name, a->>'version' AS version,
+               a->>'install_date' AS install_date, (a->>'size_bytes')::BIGINT AS size_bytes
+        FROM clients c, jsonb_array_elements(c.apps) AS a
+        WHERE lower(a->>'name') LIKE %s
+    """, (f"%{name}%",))
+    rows = cur.fetchall()
+    con.close()
+    return jsonify([{
+        "hostname": r[0],
+        "uuid": r[1],
+        "name": r[2],
+        "version": r[3],
+        "install_date": r[4],
+        "size_bytes": r[5]
+    } for r in rows])
+
+# ================= EXPORT PDF =================
+
+@app.route("/api/client/<uuid>/export/pdf")
+def export_pdf(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT hostname, ip, mac_address, hardware, apps FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
+    con.close()
+    if not r:
+        return "Client not found", 404
+
+    hostname, ip, mac, hardware, apps = r[0], r[1], r[2], safe_json(r[3]), safe_json(r[4])
+
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(tmp_file.name, pagesize=A4)
+    elements = []
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph(f"Client Report: {hostname}", styles["Title"]))
+    elements.append(Spacer(1, 12))
+    elements.append(Paragraph(f"IP: {ip}  |  MAC: {mac}", styles["Normal"]))
+    elements.append(Spacer(1, 12))
+
+    # Hardware
+    elements.append(Paragraph("Hardware Info", styles["Heading2"]))
+    hw_data = []
+    for k, v in hardware.items():
+        if k == "Disks" and isinstance(v, list):
+            for d in v:
+                hw_data.append([f"{d.get('Device','')}", f"Total {d.get('Total (GB)','')} GB", f"Free {d.get('Free (GB)','')} GB"])
+        else:
+            hw_data.append([k, str(v)])
+    if hw_data:
+        t = Table(hw_data, hAlign="LEFT")
+        t.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.grey),
+                               ("TEXTCOLOR",(0,0),(-1,0),colors.whitesmoke),
+                               ("GRID",(0,0),(-1,-1),0.5,colors.white)]))
+        elements.append(t)
+        elements.append(Spacer(1, 12))
+
+    # Apps
+    elements.append(Paragraph("Installed Apps", styles["Heading2"]))
+    app_data = [["Name","Version","Install Date","Size"]]
+    for a in apps:
+        app_data.append([a.get("name",""), a.get("version",""), a.get("install_date",""), format_size(a.get("size_bytes",0))])
+    t = Table(app_data, hAlign="LEFT")
+    t.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.grey),
+                           ("TEXTCOLOR",(0,0),(-1,0),colors.whitesmoke),
+                           ("GRID",(0,0),(-1,-1),0.5,colors.white)]))
+    elements.append(t)
+
+    doc.build(elements)
+    return send_file(tmp_file.name, as_attachment=True, download_name=f"{hostname}.pdf")
+
+# ================= EXPORT CSV =================
+
+@app.route("/api/client/<uuid>/export/csv")
+def export_csv(uuid):
+    con = get_db()
+    cur = con.cursor()
+    cur.execute("SELECT hostname, ip, mac_address, hardware, apps FROM clients WHERE client_uuid=%s", (uuid,))
+    r = cur.fetchone()
+    con.close()
+    if not r:
+        return "Client not found", 404
+
+    hostname, ip, mac, hardware, apps = r[0], r[1], r[2], safe_json(r[3]), safe_json(r[4])
+
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+    with open(tmp_file.name, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Client Report"])
+        writer.writerow(["Hostname", hostname])
+        writer.writerow(["IP", ip])
+        writer.writerow(["MAC", mac])
+        writer.writerow([])
+        writer.writerow(["Hardware Info"])
+        for k, v in hardware.items():
+            if k == "Disks" and isinstance(v, list):
+                for d in v:
+                    writer.writerow([d.get("Device",""), f"Total {d.get('Total (GB)','')} GB", f"Free {d.get('Free (GB)','')} GB"])
+            else:
+                writer.writerow([k, str(v)])
+        writer.writerow([])
+        writer.writerow(["Installed Apps"])
+        writer.writerow(["Name","Version","Install Date","Size"])
+        for a in apps:
+            writer.writerow([a.get("name",""), a.get("version",""), a.get("install_date",""), format_size(a.get("size_bytes",0))])
+
+    return send_file(tmp_file.name, as_attachment=True, download_name=f"{hostname}.csv")
 
 # ================= RUN =================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-
 
 
 
