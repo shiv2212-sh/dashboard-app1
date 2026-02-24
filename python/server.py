@@ -2166,7 +2166,7 @@ import os
 import json
 import datetime
 import psycopg2
-from flask import Flask, jsonify, render_template, request, Response, send_file
+from flask import Flask, jsonify, render_template, request, send_file
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
@@ -2182,42 +2182,6 @@ app = Flask(__name__, template_folder="templates")
 
 def get_db():
     return psycopg2.connect(DATABASE_URL, sslmode="require" if DATABASE_URL else None)
-
-def init_db():
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS clients (
-            client_uuid TEXT PRIMARY KEY,
-            mac_address TEXT,
-            hostname TEXT,
-            last_seen TIMESTAMP,
-            ip TEXT,
-            hardware JSONB,
-            apps JSONB
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS app_history (
-            id SERIAL PRIMARY KEY,
-            client_uuid TEXT,
-            app_name TEXT,
-            version TEXT,
-            install_date TEXT,
-            size_bytes BIGINT,
-            timestamp TIMESTAMP
-        )
-    """)
-
-    con.commit()
-    con.close()
-
-if DATABASE_URL:
-    init_db()
-
-# ================= HELPERS =================
 
 OFFLINE_SECONDS = 30
 
@@ -2245,78 +2209,6 @@ def dashboard():
 def client_view(uuid):
     return render_template("dashboard.html")
 
-# ================= API =================
-
-@app.route("/api/report", methods=["POST"])
-def api_report():
-    data = request.json
-
-    # ✅ Always use LOCAL IP from hardware
-    local_ip = data.get("hardware", {}).get("IP Address", "")
-
-    hardware = json.dumps(data.get("hardware", {}))
-    apps = data.get("apps", [])
-
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        INSERT INTO clients (client_uuid, mac_address, hostname, last_seen, ip, hardware, apps)
-        VALUES (%s,%s,%s,%s,%s,%s,%s)
-        ON CONFLICT (client_uuid) DO UPDATE SET
-            mac_address=EXCLUDED.mac_address,
-            hostname=EXCLUDED.hostname,
-            last_seen=EXCLUDED.last_seen,
-            ip=EXCLUDED.ip,
-            hardware=EXCLUDED.hardware,
-            apps=EXCLUDED.apps
-    """, (
-        data.get("uuid"),
-        data.get("mac"),
-        data.get("hostname"),
-        datetime.datetime.now(),
-        local_ip,
-        hardware,
-        json.dumps(apps)
-    ))
-
-    # ================= SMART HISTORY LOGIC =================
-
-    for a in apps:
-        app_name = a.get("name")
-        version = a.get("version")
-        install_date = a.get("install_date")
-        size_bytes = int(a.get("size_bytes", 0))
-
-        cur.execute("""
-            SELECT version, size_bytes
-            FROM app_history
-            WHERE client_uuid=%s AND app_name=%s
-            ORDER BY timestamp DESC
-            LIMIT 1
-        """, (data.get("uuid"), app_name))
-
-        last = cur.fetchone()
-
-        if not last or last[0] != version or int(last[1]) != size_bytes:
-            cur.execute("""
-                INSERT INTO app_history
-                (client_uuid, app_name, version, install_date, size_bytes, timestamp)
-                VALUES (%s,%s,%s,%s,%s,%s)
-            """, (
-                data.get("uuid"),
-                app_name,
-                version,
-                install_date,
-                size_bytes,
-                datetime.datetime.now()
-            ))
-
-    con.commit()
-    con.close()
-
-    return jsonify({"status": "ok"})
-
 # ================= CLIENT LIST =================
 
 @app.route("/api/clients")
@@ -2335,15 +2227,22 @@ def api_clients():
 
     result = []
     for r in rows:
+        uuid = r[0] or ""
         hostname = r[1] or ""
-        if search and search not in hostname.lower():
+        mac = r[3] or ""
+
+        if search and not (
+            search in hostname.lower()
+            or search in uuid.lower()
+            or search in mac.lower()
+        ):
             continue
 
         result.append({
-            "uuid": r[0],
+            "uuid": uuid,
             "hostname": hostname,
             "ip": r[2] or "",
-            "mac": r[3] or "",
+            "mac": mac,
             "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
             "status": status_from_last_seen(r[4])
         })
@@ -2379,26 +2278,22 @@ def api_client(uuid):
         "apps": safe_json(r[6])
     })
 
-# ================= DELETE CLIENT =================
+# ================= DELETE =================
 
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
-    try:
-        con = get_db()
-        cur = con.cursor()
+    con = get_db()
+    cur = con.cursor()
 
-        cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
-        cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
+    cur.execute("DELETE FROM app_history WHERE client_uuid=%s", (uuid,))
+    cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
 
-        con.commit()
-        con.close()
+    con.commit()
+    con.close()
 
-        return jsonify({"status": "deleted"}), 200
+    return jsonify({"status": "deleted"})
 
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# ================= APP HISTORY =================
+# ================= HISTORY =================
 
 @app.route("/api/client/<uuid>/history")
 def get_app_history(uuid):
@@ -2428,48 +2323,115 @@ def get_app_history(uuid):
 
     return jsonify(history)
 
-# ================= GLOBAL APP SEARCH =================
+# ================= GLOBAL APP SEARCH (FIXED) =================
 
 @app.route("/api/search/apps")
 def global_app_search():
-    query = request.args.get("query", "").lower()
+    query = request.args.get("name", "").lower()   # ✅ FIXED
 
     if not query:
         return jsonify([])
 
     con = get_db()
     cur = con.cursor()
-
-    cur.execute("""
-        SELECT client_uuid, hostname, last_seen, apps
-        FROM clients
-    """)
-
+    cur.execute("SELECT client_uuid, hostname, last_seen, apps FROM clients")
     rows = cur.fetchall()
     con.close()
 
     results = []
 
     for r in rows:
+        uuid = r[0]
         hostname = r[1] or ""
         last_seen = r[2]
         apps = safe_json(r[3])
 
-        status = status_from_last_seen(last_seen)
-
         for app in apps:
-            name = app.get("name", "").lower()
-            if query in name:
+            if query in app.get("name", "").lower():
                 results.append({
+                    "uuid": uuid,
                     "hostname": hostname,
-                    "app_name": app.get("name"),
                     "version": app.get("version"),
                     "install_date": app.get("install_date"),
-                    "size_bytes": int(app.get("size_bytes", 0)),
-                    "status": status
+                    "size_bytes": int(app.get("size_bytes", 0))
                 })
 
     return jsonify(results)
+
+# ================= EXPORT CSV =================
+
+@app.route("/api/client/<uuid>/export/csv")
+def export_csv(uuid):
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("SELECT apps FROM clients WHERE client_uuid=%s", (uuid,))
+    row = cur.fetchone()
+    con.close()
+
+    if not row:
+        return jsonify({"error": "Client not found"}), 404
+
+    apps = safe_json(row[0])
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
+    with open(temp.name, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Name", "Version", "Install Date", "Size Bytes"])
+
+        for a in apps:
+            writer.writerow([
+                a.get("name"),
+                a.get("version"),
+                a.get("install_date"),
+                a.get("size_bytes")
+            ])
+
+    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.csv")
+
+# ================= EXPORT PDF =================
+
+@app.route("/api/client/<uuid>/export/pdf")
+def export_pdf(uuid):
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("SELECT apps FROM clients WHERE client_uuid=%s", (uuid,))
+    row = cur.fetchone()
+    con.close()
+
+    if not row:
+        return jsonify({"error": "Client not found"}), 404
+
+    apps = safe_json(row[0])
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    doc = SimpleDocTemplate(temp.name, pagesize=A4)
+    elements = []
+
+    styles = getSampleStyleSheet()
+    elements.append(Paragraph(f"Installed Applications - {uuid}", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    data = [["Name", "Version", "Install Date", "Size Bytes"]]
+    for a in apps:
+        data.append([
+            a.get("name"),
+            a.get("version"),
+            a.get("install_date"),
+            str(a.get("size_bytes"))
+        ])
+
+    table = Table(data)
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (-1,0), colors.grey),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.black)
+    ]))
+
+    elements.append(table)
+    doc.build(elements)
+
+    return send_file(temp.name, as_attachment=True, download_name=f"{uuid}.pdf")
 
 # ================= RUN =================
 
