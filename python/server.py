@@ -2250,9 +2250,7 @@ def client_view(uuid):
 @app.route("/api/report", methods=["POST"])
 def api_report():
     data = request.json
-
     local_ip = data.get("hardware", {}).get("IP Address", "")
-
     hardware = json.dumps(data.get("hardware", {}))
     apps = data.get("apps", [])
 
@@ -2348,6 +2346,55 @@ def api_clients():
 
     return jsonify(result)
 
+# ================= GLOBAL APP SEARCH (NEW FEATURE) =================
+
+@app.route("/api/search/apps")
+def api_search_apps():
+    query = request.args.get("query", "").lower()
+
+    if not query:
+        return jsonify([])
+
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT 
+            c.client_uuid,
+            c.hostname,
+            c.ip,
+            c.mac_address,
+            c.last_seen,
+            app->>'name' AS app_name,
+            app->>'version' AS version,
+            app->>'install_date' AS install_date,
+            app->>'size_bytes' AS size_bytes
+        FROM clients c,
+        jsonb_array_elements(c.apps) AS app
+        WHERE LOWER(app->>'name') LIKE %s
+        ORDER BY c.hostname
+    """, (f"%{query}%",))
+
+    rows = cur.fetchall()
+    con.close()
+
+    results = []
+    for r in rows:
+        results.append({
+            "uuid": r[0],
+            "hostname": r[1] or "",
+            "ip": r[2] or "",
+            "mac": r[3] or "",
+            "last_seen": r[4].strftime("%Y-%m-%d %H:%M:%S") if r[4] else "Unknown",
+            "status": status_from_last_seen(r[4]),
+            "app_name": r[5],
+            "version": r[6],
+            "install_date": r[7],
+            "size_bytes": int(r[8]) if r[8] else 0
+        })
+
+    return jsonify(results)
+
 # ================= SINGLE CLIENT =================
 
 @app.route("/api/client/<uuid>")
@@ -2406,8 +2453,8 @@ def export_csv(uuid):
         writer.writerow(["IP", r[1]])
         writer.writerow(["MAC", r[2]])
         writer.writerow([])
-
         writer.writerow(["Hardware Info"])
+
         for k, v in hardware.items():
             writer.writerow([k, v])
 
@@ -2455,12 +2502,10 @@ def export_pdf(uuid):
     elements.append(Paragraph(f"Client Report - {r[0]}", styles["Heading1"]))
     elements.append(Spacer(1, 12))
 
-    # Client basic info
     elements.append(Paragraph(f"IP: {r[1]}", styles["Normal"]))
     elements.append(Paragraph(f"MAC: {r[2]}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
-    # Hardware section (FIXED)
     elements.append(Paragraph("Hardware Information", styles["Heading2"]))
     elements.append(Spacer(1, 8))
 
@@ -2469,7 +2514,6 @@ def export_pdf(uuid):
 
     elements.append(Spacer(1, 20))
 
-    # Apps table
     elements.append(Paragraph("Installed Applications", styles["Heading2"]))
     elements.append(Spacer(1, 10))
 
@@ -2498,4 +2542,3 @@ def export_pdf(uuid):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-
