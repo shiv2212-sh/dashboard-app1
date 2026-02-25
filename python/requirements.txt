@@ -4,3 +4,4 @@ gunicorn
 reportlab
 fpdf==1.7.2
 Werkzeug
+flask_cors
