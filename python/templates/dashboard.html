@@ -573,10 +573,10 @@
 <title>Enterprise Client Monitoring</title>
 <style>
 body { font-family: Arial; background:#0f172a; color:white; margin:0; }
-header { padding:20px; font-size:24px; }
-button { padding:6px 12px; margin:4px; cursor:pointer; }
+header { padding:20px; font-size:24px; display:flex; justify-content:space-between;}
+button { padding:6px 12px; cursor:pointer; }
 table { width:100%; border-collapse: collapse; margin-top:10px;}
-th, td { border:1px solid #444; padding:8px; text-align:left;}
+th, td { border:1px solid #444; padding:8px; }
 .modal {
   display:none; position:fixed; inset:0;
   background:rgba(0,0,0,0.8);
@@ -584,14 +584,14 @@ th, td { border:1px solid #444; padding:8px; text-align:left;}
 }
 .modal-content {
   background:#1e293b; padding:20px;
-  width:80%; max-height:80%; overflow:auto;
+  width:85%; max-height:85%; overflow:auto;
 }
 </style>
 </head>
 <body>
 
 <header>
-Enterprise Client Monitoring
+<div>Enterprise Client Monitoring</div>
 <button onclick="openGlobalSearch()">Global App Search</button>
 </header>
 
@@ -605,56 +605,55 @@ Enterprise Client Monitoring
 </div>
 
 <script>
-const API_BASE = "";
-
 function formatSize(bytes){
     if(!bytes) return "0 B";
-    const sizes = ["B","KB","MB","GB"];
-    let i = 0;
-    while(bytes >= 1024 && i < sizes.length-1){
-        bytes /= 1024;
-        i++;
+    const sizes=["B","KB","MB","GB"];
+    let i=0;
+    while(bytes>=1024 && i<sizes.length-1){
+        bytes/=1024; i++;
     }
     return bytes.toFixed(2)+" "+sizes[i];
 }
 
 async function loadClients(){
-    const res = await fetch("/api/clients");
-    const data = await res.json();
+    const res=await fetch("/api/clients");
+    const data=await res.json();
 
-    let html = "<table><tr><th>Hostname</th><th>Status</th><th>Last Seen</th><th>Action</th></tr>";
+    let html="<table><tr><th>Hostname</th><th>Status</th><th>Last Seen</th><th>Action</th></tr>";
 
     data.forEach(c=>{
-        html += `
+        html+=`
         <tr>
             <td>${c.hostname}</td>
             <td>${c.status}</td>
             <td>${c.last_seen}</td>
             <td>
                 <button onclick="viewClient('${c.uuid}')">View</button>
+                <button onclick="deleteClient('${c.uuid}')">Delete</button>
             </td>
         </tr>`;
     });
 
-    html += "</table>";
-    document.getElementById("clients").innerHTML = html;
+    html+="</table>";
+    document.getElementById("clients").innerHTML=html;
 }
 
 async function viewClient(uuid){
-    const res = await fetch(`/api/client/${uuid}`);
-    const c = await res.json();
+    const res=await fetch("/api/client/"+uuid);
+    const c=await res.json();
 
-    let html = `
-        <h2>${c.hostname}</h2>
-        <p>IP: ${c.ip}</p>
-        <p>OS: ${c.os}</p>
-        <h3>Installed Apps</h3>
-        <table>
-        <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>
-    `;
+    let html=`
+    <h2>${c.hostname}</h2>
+    <p>IP: ${c.ip}</p>
+    <p>OS: ${c.os}</p>
+    <button onclick="exportCSV('${uuid}')">Export CSV</button>
+    <button onclick="exportPDF('${uuid}')">Export PDF</button>
+    <h3>Installed Apps</h3>
+    <table>
+    <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>`;
 
     c.apps.forEach(a=>{
-        html += `
+        html+=`
         <tr>
             <td>${a.name}</td>
             <td>${a.version}</td>
@@ -663,10 +662,23 @@ async function viewClient(uuid){
         </tr>`;
     });
 
-    html += "</table>";
+    html+="</table>";
 
-    document.getElementById("modalContent").innerHTML = html;
+    document.getElementById("modalContent").innerHTML=html;
     document.getElementById("modal").style.display="flex";
+}
+
+function deleteClient(uuid){
+    fetch("/api/client/"+uuid,{method:"DELETE"})
+    .then(()=>loadClients());
+}
+
+function exportCSV(uuid){
+    window.location="/api/export/csv/"+uuid;
+}
+
+function exportPDF(uuid){
+    window.location="/api/export/pdf/"+uuid;
 }
 
 function closeModal(){
@@ -674,54 +686,47 @@ function closeModal(){
 }
 
 function openGlobalSearch(){
-    document.getElementById("modalContent").innerHTML = `
-        <h2>Global App Search</h2>
-        <input id="searchInput">
-        <button onclick="runGlobalSearch()">Search</button>
-        <div id="searchResults"></div>
-    `;
+    document.getElementById("modalContent").innerHTML=`
+    <h2>Global App Search</h2>
+    <input id="searchInput">
+    <button onclick="runGlobalSearch()">Search</button>
+    <div id="searchResults"></div>`;
     document.getElementById("modal").style.display="flex";
 }
 
 async function runGlobalSearch(){
-    const query = document.getElementById("searchInput").value;
-    const res = await fetch(`/api/search/apps?name=${encodeURIComponent(query)}`);
-    const results = await res.json();
+    const query=document.getElementById("searchInput").value;
+    const res=await fetch("/api/search/apps?name="+encodeURIComponent(query));
+    const results=await res.json();
 
-    let html = `
-        <table>
-        <tr><th>Hostname</th><th>Matches</th><th>Action</th></tr>
-    `;
+    let html="<table><tr><th>Hostname</th><th>Matches</th><th>Action</th></tr>";
 
     results.forEach(r=>{
-        html += `
+        html+=`
         <tr>
             <td>${r.hostname}</td>
             <td>${r.count}</td>
             <td>
-                <button onclick="viewClientSearch('${r.uuid}','${query}','${r.hostname}')">
-                View
-                </button>
+                <button onclick="viewClientSearch('${r.uuid}','${query}','${r.hostname}')">View</button>
             </td>
         </tr>`;
     });
 
-    html += "</table>";
-    document.getElementById("searchResults").innerHTML = html;
+    html+="</table>";
+    document.getElementById("searchResults").innerHTML=html;
 }
 
-async function viewClientSearch(uuid, query, hostname){
-    const res = await fetch(`/api/search/apps/details?uuid=${uuid}&name=${encodeURIComponent(query)}`);
-    const results = await res.json();
+async function viewClientSearch(uuid,query,hostname){
+    const res=await fetch("/api/search/apps/details?uuid="+uuid+"&name="+encodeURIComponent(query));
+    const results=await res.json();
 
-    let html = `
-        <h3>${hostname} Results</h3>
-        <table>
-        <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>
-    `;
+    let html=`
+    <h3>${hostname} Results</h3>
+    <table>
+    <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>`;
 
     results.forEach(r=>{
-        html += `
+        html+=`
         <tr>
             <td>${r.name}</td>
             <td>${r.version}</td>
@@ -730,9 +735,8 @@ async function viewClientSearch(uuid, query, hostname){
         </tr>`;
     });
 
-    html += "</table>";
-
-    document.getElementById("searchResults").innerHTML = html;
+    html+="</table>";
+    document.getElementById("searchResults").innerHTML=html;
 }
 
 loadClients();
@@ -740,4 +744,6 @@ loadClients();
 
 </body>
 </html>
+
+
 
