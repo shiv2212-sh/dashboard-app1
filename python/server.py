@@ -2163,14 +2163,14 @@
 
 
 import os
+import io
+import csv
 import datetime
 import psycopg2
 from flask import Flask, request, jsonify, render_template, send_file
 from flask_cors import CORS
 from dotenv import load_dotenv
 from fpdf import FPDF
-import csv
-import io
 
 load_dotenv()
 
@@ -2184,14 +2184,18 @@ def get_db():
     return psycopg2.connect(DATABASE_URL)
 
 
-# ================= DASHBOARD PAGE =================
+# ============================================================
+# DASHBOARD
+# ============================================================
 
 @app.route("/")
 def dashboard():
     return render_template("dashboard.html")
 
 
-# ================= CLIENT LIST =================
+# ============================================================
+# CLIENT LIST
+# ============================================================
 
 @app.route("/api/clients")
 def api_clients():
@@ -2209,8 +2213,8 @@ def api_clients():
     con.close()
 
     now = datetime.datetime.utcnow()
-
     result = []
+
     for r in rows:
         status = "Offline"
         if r[4] and (now - r[4]).total_seconds() < 120:
@@ -2231,7 +2235,9 @@ def api_clients():
     return jsonify(result)
 
 
-# ================= SINGLE CLIENT DETAILS =================
+# ============================================================
+# SINGLE CLIENT DETAILS
+# ============================================================
 
 @app.route("/api/client/<uuid>")
 def get_client(uuid):
@@ -2263,21 +2269,23 @@ def get_client(uuid):
     })
 
 
-# ================= DELETE CLIENT =================
+# ============================================================
+# DELETE CLIENT
+# ============================================================
 
 @app.route("/api/client/<uuid>", methods=["DELETE"])
 def delete_client(uuid):
     con = get_db()
     cur = con.cursor()
-
     cur.execute("DELETE FROM clients WHERE client_uuid=%s", (uuid,))
     con.commit()
     con.close()
-
     return jsonify({"message": "Client deleted"})
 
 
-# ================= APP HISTORY =================
+# ============================================================
+# APP HISTORY
+# ============================================================
 
 @app.route("/api/history/<uuid>")
 def app_history(uuid):
@@ -2285,7 +2293,8 @@ def app_history(uuid):
     cur = con.cursor()
 
     cur.execute("""
-        SELECT app_name, version, install_date, size_bytes, detected_at
+        SELECT app_name, version, install_date,
+               size_bytes, detected_at
         FROM app_history
         WHERE client_uuid=%s
         ORDER BY detected_at DESC
@@ -2303,7 +2312,82 @@ def app_history(uuid):
     } for r in rows])
 
 
-# ================= GLOBAL SEARCH (GROUPED) =================
+# ============================================================
+# EXPORT CSV
+# ============================================================
+
+@app.route("/api/export/csv/<uuid>")
+def export_csv(uuid):
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT app_name, version, install_date, size_bytes
+        FROM app_history
+        WHERE client_uuid=%s
+    """, (uuid,))
+
+    rows = cur.fetchall()
+    con.close()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["App Name", "Version", "Install Date", "Size (bytes)"])
+
+    for r in rows:
+        writer.writerow(r)
+
+    output.seek(0)
+
+    return send_file(
+        io.BytesIO(output.getvalue().encode()),
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name="apps.csv"
+    )
+
+
+# ============================================================
+# EXPORT PDF
+# ============================================================
+
+@app.route("/api/export/pdf/<uuid>")
+def export_pdf(uuid):
+    con = get_db()
+    cur = con.cursor()
+
+    cur.execute("""
+        SELECT app_name, version, install_date, size_bytes
+        FROM app_history
+        WHERE client_uuid=%s
+    """, (uuid,))
+
+    rows = cur.fetchall()
+    con.close()
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", size=10)
+
+    for r in rows:
+        line = f"{r[0]} | {r[1]} | {r[2]} | {r[3]}"
+        pdf.multi_cell(0, 6, line)
+
+    pdf_output = io.BytesIO()
+    pdf.output(pdf_output)
+    pdf_output.seek(0)
+
+    return send_file(
+        pdf_output,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="apps.pdf"
+    )
+
+
+# ============================================================
+# GLOBAL SEARCH (GROUPED BY CLIENT)
+# ============================================================
 
 @app.route("/api/search/apps")
 def global_search():
@@ -2368,9 +2452,10 @@ def global_search_details():
     } for r in rows])
 
 
+# ============================================================
+
 if __name__ == "__main__":
     app.run(debug=True)
-
 
 
 
