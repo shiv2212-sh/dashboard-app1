@@ -568,268 +568,164 @@
 
 
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Enterprise Client Monitoring</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
+<title>Client Dashboard</title>
 <style>
-body {
-    margin:0;
-    font-family:'Segoe UI', sans-serif;
-    background:linear-gradient(135deg,#0f172a,#1e293b);
-    color:white;
+body { font-family: Arial, sans-serif; background:#f0f2f5; margin:20px; }
+table { width:100%; border-collapse: collapse; margin-top:10px; }
+th, td { border:1px solid #ccc; padding:8px; text-align:left; }
+th { background:#333; color:white; }
+.status-online { color: green; font-weight:bold; }
+.status-offline { color: red; font-weight:bold; }
+input { padding:6px; margin:6px 0; width:300px; }
+button { padding:6px 12px; }
+.popup {
+    display:none; position:fixed; top:50%; left:50%;
+    transform:translate(-50%, -50%);
+    background:white; padding:20px; border:2px solid #333;
+    max-height:80%; overflow:auto; z-index:1000;
 }
-.container { padding:40px; }
-h1,h2 { font-weight:600; }
-.glass-card {
-    background:rgba(255,255,255,0.05);
-    backdrop-filter:blur(12px);
-    border-radius:16px;
-    padding:20px;
-    box-shadow:0 8px 30px rgba(0,0,0,0.4);
-    margin-bottom:25px;
-}
-.stats-grid {
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
-    gap:20px;
-    margin-bottom:25px;
-}
-.stat-card { text-align:center; font-size:18px; }
-.stat-number { font-size:28px; font-weight:bold; margin-top:10px; }
-input {
-    width:100%;
-    padding:12px;
-    border-radius:10px;
-    border:none;
-    outline:none;
-    background:rgba(255,255,255,0.1);
-    color:white;
-    margin-bottom:20px;
-}
-table { width:100%; border-collapse:collapse; }
-th,td { padding:12px; text-align:left; }
-tr { border-top:1px solid rgba(255,255,255,0.08); }
-tr:hover { background:rgba(255,255,255,0.05); }
-.status { padding:6px 12px; border-radius:20px; font-size:12px; font-weight:600; }
-.online { background:rgba(16,185,129,0.2); color:#10b981; }
-.offline { background:rgba(239,68,68,0.2); color:#ef4444; }
-button {
-    padding:6px 12px;
-    border-radius:8px;
-    border:none;
-    cursor:pointer;
-    font-size:12px;
-    margin-right:5px;
-}
-.view-btn { background:#3b82f6; color:white; }
-.pdf-btn { background:#10b981; color:white; }
-.csv-btn { background:#0ea5e9; color:white; }
-.delete-btn { background:#ef4444; color:white; }
-.back-btn { background:#64748b; color:white; margin-bottom:15px; }
-.history-btn { background:#f59e0b; color:white; }
-.global-btn { background:#8b5cf6; color:white; margin-bottom:15px; }
-
-.hardware-grid {
-    display:grid;
-    grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
-    gap:15px;
-}
-.hardware-item {
-    background:rgba(255,255,255,0.06);
-    padding:15px;
-    border-radius:12px;
-}
-.modal {
-    position:fixed;
-    top:0;left:0;
-    width:100%;height:100%;
-    background:rgba(0,0,0,0.6);
-    display:none;
-    justify-content:center;
-    align-items:center;
-}
-.modal-content {
-    background:#1e293b;
-    padding:20px;
-    border-radius:12px;
-    width:80%;
-    max-height:80%;
-    overflow:auto;
+.popup table { width:100%; }
+.popup-close { cursor:pointer; color:red; float:right; font-weight:bold; }
+.overlay {
+    display:none; position:fixed; top:0; left:0;
+    width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;
 }
 </style>
 </head>
 <body>
 
-<div class="container">
-<h1 id="pageTitle">Enterprise Client Monitoring</h1>
+<h1>Client Dashboard</h1>
 
-<div id="dashboardView">
-    <div class="stats-grid">
-        <div class="glass-card stat-card">
-            Total Clients
-            <div class="stat-number" id="totalCount">0</div>
-        </div>
-        <div class="glass-card stat-card">
-            Online
-            <div class="stat-number" id="onlineCount">0</div>
-        </div>
-        <div class="glass-card stat-card">
-            Offline
-            <div class="stat-number" id="offlineCount">0</div>
-        </div>
-    </div>
+<input type="text" id="appSearch" placeholder="Search apps globally (optional)">
+<button onclick="searchApps()">Search</button>
 
-    <div class="glass-card">
-        <button class="global-btn" onclick="openGlobalSearch()">🔎 Global App Search</button>
-        <input type="text" id="searchInput" placeholder="Search..." onkeyup="loadClients()">
-        <table>
-            <thead>
-                <tr>
-                    <th>UUID</th>
-                    <th>Hostname</th>
-                    <th>MAC</th>
-                    <th>Last Seen</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                </tr>
-            </thead>
-            <tbody id="clientsTable"></tbody>
-        </table>
-    </div>
-</div>
+<table id="clientTable">
+<thead>
+<tr>
+<th>Hostname</th>
+<th>UUID</th>
+<th>IP</th>
+<th>MAC</th>
+<th>Last Seen</th>
+<th>Status</th>
+<th>Matching Apps</th>
+</tr>
+</thead>
+<tbody></tbody>
+</table>
 
-<div id="clientView" style="display:none;" class="glass-card">
-    <button class="back-btn" onclick="goBack()">← Back</button>
-    <div id="clientDetails"></div>
-</div>
-</div>
-
-<!-- History Modal -->
-<div id="historyModal" class="modal">
-    <div class="modal-content">
-        <h3>App History</h3>
-        <div id="historyBody"></div>
-        <br>
-        <button onclick="closeModal()">Close</button>
-    </div>
-</div>
-
-<!-- Global Search Modal -->
-<div id="globalSearchModal" class="modal">
-    <div class="modal-content">
-        <h3>Global App Search</h3>
-        <input type="text" id="globalSearchInput" placeholder="Enter app name...">
-        <button class="global-btn" onclick="runGlobalSearch()">Search</button>
-        <div id="globalSearchResults"></div>
-        <br>
-        <button onclick="closeGlobalSearch()">Close</button>
-    </div>
-</div>
-
-<script>
-
-const API_BASE = "/api";
-let currentUUID = null;
-
-function formatSize(bytes){
-    if(!bytes || bytes === 0) return "0 MB";
-    const mb = bytes / (1024 * 1024);
-    if(mb < 1024) return mb.toFixed(2) + " MB";
-    return (mb / 1024).toFixed(2) + " GB";
-}
-
-function openGlobalSearch(){
-    document.getElementById("globalSearchModal").style.display="flex";
-}
-
-function closeGlobalSearch(){
-    document.getElementById("globalSearchModal").style.display="none";
-    document.getElementById("globalSearchResults").innerHTML="";
-}
-
-async function runGlobalSearch(){
-    const query = document.getElementById("globalSearchInput").value;
-    if(!query) return;
-
-    const res = await fetch(`${API_BASE}/search/apps?name=${encodeURIComponent(query)}`);
-    const results = await res.json();
-
-    if(results.length === 0){
-        document.getElementById("globalSearchResults").innerHTML = "<p>No results found.</p>";
-        return;
-    }
-
-    let html = `
-        <table>
-            <tr>
-                <th>Hostname</th>
-                <th>UUID</th>
-                <th>Matches</th>
-                <th>Action</th>
-            </tr>
-    `;
-
-    results.forEach(r => {
-        html += `
-            <tr>
-                <td>${r.hostname}</td>
-                <td>${r.uuid}</td>
-                <td>${r.matches}</td>
-                <td>
-                    <button class="view-btn"
-                        onclick="viewGlobalClient('${r.uuid}', '${query}')">
-                        View
-                    </button>
-                </td>
-            </tr>
-        `;
-    });
-
-    html += "</table>";
-
-    document.getElementById("globalSearchResults").innerHTML = html;
-}
-
-async function viewGlobalClient(uuid, query){
-    const res = await fetch(`${API_BASE}/search/apps/${uuid}?name=${encodeURIComponent(query)}`);
-    const apps = await res.json();
-
-    if(apps.length === 0){
-        document.getElementById("globalSearchResults").innerHTML = "<p>No apps found.</p>";
-        return;
-    }
-
-    let html = `
-        <h3>App Results</h3>
-        <table>
+<div class="overlay" id="overlay"></div>
+<div class="popup" id="popup">
+    <span class="popup-close" onclick="closePopup()">X</span>
+    <h3 id="popupTitle">Matched Apps</h3>
+    <table id="popupTable">
+        <thead>
             <tr>
                 <th>Name</th>
                 <th>Version</th>
                 <th>Install Date</th>
                 <th>Size</th>
             </tr>
-    `;
+        </thead>
+        <tbody></tbody>
+    </table>
+</div>
 
-    apps.forEach(a => {
-        html += `
-            <tr>
-                <td>${a.name}</td>
-                <td>${a.version || ""}</td>
-                <td>${a.install_date || ""}</td>
-                <td>${formatSize(a.size_bytes)}</td>
-            </tr>
+<script>
+// ================= Load all clients =================
+async function loadClients() {
+    const res = await fetch("/api/clients");
+    const clients = await res.json();
+
+    const tbody = document.querySelector("#clientTable tbody");
+    tbody.innerHTML = "";
+
+    for (const c of clients) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${c.hostname}</td>
+            <td>${c.uuid}</td>
+            <td>${c.ip}</td>
+            <td>${c.mac}</td>
+            <td>${c.last_seen}</td>
+            <td class="status-${c.status.toLowerCase()}">${c.status}</td>
+            <td id="matches-${c.uuid}">-</td>
         `;
-    });
-
-    html += "</table>";
-
-    document.getElementById("globalSearchResults").innerHTML = html;
+        tbody.appendChild(tr);
+    }
 }
 
+// ================= Global App Search =================
+async function searchApps() {
+    const name = document.querySelector("#appSearch").value.trim();
+    if (!name) {
+        // reset matches
+        document.querySelectorAll("[id^='matches-']").forEach(td => td.textContent = "-");
+        return;
+    }
+
+    const res = await fetch(`/api/search/apps?name=${encodeURIComponent(name)}`);
+    const data = await res.json();
+
+    // Reset all first
+    document.querySelectorAll("[id^='matches-']").forEach(td => td.textContent = "-");
+
+    // Update matches per client
+    data.forEach(item => {
+        const td = document.querySelector(`#matches-${item.uuid}`);
+        if (td) {
+            td.textContent = item.matches;
+            td.style.cursor = "pointer";
+            td.onclick = () => showMatchedApps(item.uuid, name);
+        }
+    });
+}
+
+// ================= Show matched apps popup =================
+async function showMatchedApps(uuid, appName) {
+    const res = await fetch(`/api/search/apps/${uuid}?name=${encodeURIComponent(appName)}`);
+    const apps = await res.json();
+
+    const tbody = document.querySelector("#popupTable tbody");
+    tbody.innerHTML = "";
+    apps.forEach(a => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+            <td>${a.name}</td>
+            <td>${a.version}</td>
+            <td>${a.install_date}</td>
+            <td>${formatSize(a.size_bytes)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    document.getElementById("popupTitle").textContent = `Matched Apps for Client: ${uuid}`;
+    document.getElementById("overlay").style.display = "block";
+    document.getElementById("popup").style.display = "block";
+}
+
+// ================= Close popup =================
+function closePopup() {
+    document.getElementById("overlay").style.display = "none";
+    document.getElementById("popup").style.display = "none";
+}
+
+// ================= Helper =================
+function formatSize(bytes) {
+    if (!bytes) return "0 MB";
+    let mb = bytes / (1024*1024);
+    if (mb < 1024) return mb.toFixed(2) + " MB";
+    return (mb/1024).toFixed(2) + " GB";
+}
+
+// ================= Auto load =================
+loadClients();
+setInterval(loadClients, 15000); // refresh every 15 sec
 </script>
+
 </body>
 </html>
 
