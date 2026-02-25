@@ -2286,6 +2286,7 @@ def api_report():
         json.dumps(apps)
     ))
 
+    # App history
     for a in apps:
         app_name = a.get("name")
         version = a.get("version")
@@ -2408,72 +2409,33 @@ def get_app_history(uuid):
                 "size_bytes": r[3]} for r in rows]
     return jsonify(history)
 
-# ================= GLOBAL APP SEARCH (UPDATED ONLY THIS PART) =================
+# ================= GLOBAL APP SEARCH =================
 
 @app.route("/api/search/apps")
 def global_app_search():
     name = request.args.get("name", "").lower()
     if not name:
         return jsonify([])
-
     con = get_db()
     cur = con.cursor()
-
     cur.execute("""
-        SELECT c.hostname,
-               c.client_uuid,
-               COUNT(*) as match_count
-        FROM clients c,
-             jsonb_array_elements(c.apps) AS a
+        SELECT c.hostname, c.client_uuid, a->>'name' AS app_name, a->>'version' AS version,
+               a->>'install_date' AS install_date, (a->>'size_bytes')::BIGINT AS size_bytes
+        FROM clients c, jsonb_array_elements(c.apps) AS a
         WHERE lower(a->>'name') LIKE %s
-        GROUP BY c.hostname, c.client_uuid
-        ORDER BY match_count DESC
     """, (f"%{name}%",))
-
     rows = cur.fetchall()
     con.close()
-
     return jsonify([{
         "hostname": r[0],
         "uuid": r[1],
-        "count": r[2]
-    } for r in rows])
-
-
-@app.route("/api/search/apps/details")
-def global_app_search_details():
-    name = request.args.get("name", "").lower()
-    uuid = request.args.get("uuid")
-
-    if not name or not uuid:
-        return jsonify([])
-
-    con = get_db()
-    cur = con.cursor()
-
-    cur.execute("""
-        SELECT a->>'name' AS app_name,
-               a->>'version' AS version,
-               a->>'install_date' AS install_date,
-               (a->>'size_bytes')::BIGINT AS size_bytes
-        FROM clients c,
-             jsonb_array_elements(c.apps) AS a
-        WHERE c.client_uuid = %s
-          AND lower(a->>'name') LIKE %s
-    """, (uuid, f"%{name}%"))
-
-    rows = cur.fetchall()
-    con.close()
-
-    return jsonify([{
-        "name": r[0],
-        "version": r[1],
-        "install_date": r[2],
-        "size_bytes": r[3]
+        "name": r[2],
+        "version": r[3],
+        "install_date": r[4],
+        "size_bytes": r[5]
     } for r in rows])
 
 # ================= EXPORT PDF =================
-# (Everything below unchanged — exactly your original code)
 
 @app.route("/api/client/<uuid>/export/pdf")
 def export_pdf(uuid):
@@ -2496,6 +2458,7 @@ def export_pdf(uuid):
     elements.append(Paragraph(f"IP: {ip}  |  MAC: {mac}", styles["Normal"]))
     elements.append(Spacer(1, 12))
 
+    # Hardware
     elements.append(Paragraph("Hardware Info", styles["Heading2"]))
     hw_data = []
     for k, v in hardware.items():
@@ -2512,6 +2475,7 @@ def export_pdf(uuid):
         elements.append(t)
         elements.append(Spacer(1, 12))
 
+    # Apps
     elements.append(Paragraph("Installed Apps", styles["Heading2"]))
     app_data = [["Name","Version","Install Date","Size"]]
     for a in apps:
@@ -2524,6 +2488,8 @@ def export_pdf(uuid):
 
     doc.build(elements)
     return send_file(tmp_file.name, as_attachment=True, download_name=f"{hostname}.pdf")
+
+# ================= EXPORT CSV =================
 
 @app.route("/api/client/<uuid>/export/csv")
 def export_csv(uuid):
@@ -2565,7 +2531,6 @@ def export_csv(uuid):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True)
-
 
 
 
