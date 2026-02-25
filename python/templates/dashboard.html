@@ -570,152 +570,159 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
 <title>Enterprise Client Monitoring</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
 <style>
-body {
-    margin:0;
-    font-family:'Segoe UI', sans-serif;
-    background:linear-gradient(135deg,#0f172a,#1e293b);
-    color:white;
-}
-.container { padding:40px; }
-.glass-card {
-    background:rgba(255,255,255,0.05);
-    backdrop-filter:blur(12px);
-    border-radius:16px;
-    padding:20px;
-    box-shadow:0 8px 30px rgba(0,0,0,0.4);
-    margin-bottom:25px;
-}
-button {
-    padding:6px 12px;
-    border-radius:8px;
-    border:none;
-    cursor:pointer;
-    font-size:12px;
-    margin-right:5px;
-}
-.global-btn { background:#8b5cf6; color:white; }
-.view-btn { background:#3b82f6; color:white; }
-
-table { width:100%; border-collapse:collapse; }
-th,td { padding:12px; text-align:left; }
-tr { border-top:1px solid rgba(255,255,255,0.08); }
-
+body { font-family: Arial; background:#0f172a; color:white; margin:0; }
+header { padding:20px; font-size:24px; }
+button { padding:6px 12px; margin:4px; cursor:pointer; }
+table { width:100%; border-collapse: collapse; margin-top:10px;}
+th, td { border:1px solid #444; padding:8px; text-align:left;}
 .modal {
-    position:fixed;
-    top:0;left:0;
-    width:100%;height:100%;
-    background:rgba(0,0,0,0.6);
-    display:none;
-    justify-content:center;
-    align-items:center;
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,0.8);
+  justify-content:center; align-items:center;
 }
 .modal-content {
-    background:#1e293b;
-    padding:20px;
-    border-radius:12px;
-    width:80%;
-    max-height:80%;
-    overflow:auto;
+  background:#1e293b; padding:20px;
+  width:80%; max-height:80%; overflow:auto;
 }
 </style>
 </head>
 <body>
 
-<div class="container">
-<h1>Enterprise Client Monitoring</h1>
+<header>
+Enterprise Client Monitoring
+<button onclick="openGlobalSearch()">Global App Search</button>
+</header>
 
-<div class="glass-card">
-    <button class="global-btn" onclick="openGlobalSearch()">🔎 Global App Search</button>
-</div>
-</div>
+<div id="clients"></div>
 
-<!-- GLOBAL SEARCH MODAL -->
-<div id="globalSearchModal" class="modal">
-    <div class="modal-content">
-        <h3>Global App Search</h3>
-        <input type="text" id="globalSearchInput" placeholder="Enter app name..." style="width:100%;padding:10px;margin-bottom:10px;">
-        <button class="global-btn" onclick="runGlobalSearch()">Search</button>
-        <div id="globalSearchResults"></div>
-        <br>
-        <button onclick="closeGlobalSearch()">Close</button>
-    </div>
-</div>
-
-<!-- DETAILS MODAL -->
-<div id="globalDetailsModal" class="modal">
-    <div class="modal-content">
-        <h3 id="detailsTitle"></h3>
-        <div id="detailsBody"></div>
-        <br>
-        <button onclick="closeDetails()">Close</button>
-    </div>
+<div class="modal" id="modal">
+  <div class="modal-content">
+    <button onclick="closeModal()">Close</button>
+    <div id="modalContent"></div>
+  </div>
 </div>
 
 <script>
-
-const API_BASE="/api";
+const API_BASE = "";
 
 function formatSize(bytes){
-    if(!bytes || bytes===0) return "0 MB";
-    const mb=bytes/(1024*1024);
-    if(mb<1024) return mb.toFixed(2)+" MB";
-    return (mb/1024).toFixed(2)+" GB";
-}
-
-function openGlobalSearch(){
-    document.getElementById("globalSearchModal").style.display="flex";
-}
-
-function closeGlobalSearch(){
-    document.getElementById("globalSearchModal").style.display="none";
-    document.getElementById("globalSearchResults").innerHTML="";
-}
-
-function closeDetails(){
-    document.getElementById("globalDetailsModal").style.display="none";
-}
-
-async function runGlobalSearch(){
-    const query=document.getElementById("globalSearchInput").value;
-    if(!query) return;
-
-    const res=await fetch(`${API_BASE}/search/apps?name=${encodeURIComponent(query)}`);
-    const results=await res.json();
-
-    if(results.length===0){
-        document.getElementById("globalSearchResults").innerHTML="<p>No results found.</p>";
-        return;
+    if(!bytes) return "0 B";
+    const sizes = ["B","KB","MB","GB"];
+    let i = 0;
+    while(bytes >= 1024 && i < sizes.length-1){
+        bytes /= 1024;
+        i++;
     }
+    return bytes.toFixed(2)+" "+sizes[i];
+}
 
-    let html="<table><tr><th>Hostname</th><th>Matches</th><th>Action</th></tr>";
+async function loadClients(){
+    const res = await fetch("/api/clients");
+    const data = await res.json();
 
-    results.forEach(r=>{
-        html+=`<tr>
-            <td>${r.hostname}</td>
-            <td>${r.count}</td>
-            <td><button class="view-btn" onclick="viewClientResults('${r.uuid}','${query}','${r.hostname}')">View</button></td>
+    let html = "<table><tr><th>Hostname</th><th>Status</th><th>Last Seen</th><th>Action</th></tr>";
+
+    data.forEach(c=>{
+        html += `
+        <tr>
+            <td>${c.hostname}</td>
+            <td>${c.status}</td>
+            <td>${c.last_seen}</td>
+            <td>
+                <button onclick="viewClient('${c.uuid}')">View</button>
+            </td>
         </tr>`;
     });
 
-    html+="</table>";
-    document.getElementById("globalSearchResults").innerHTML=html;
+    html += "</table>";
+    document.getElementById("clients").innerHTML = html;
 }
 
-async function viewClientResults(uuid, query, hostname){
-    const res=await fetch(`${API_BASE}/search/apps/details?uuid=${uuid}&name=${encodeURIComponent(query)}`);
-    const results=await res.json();
+async function viewClient(uuid){
+    const res = await fetch(`/api/client/${uuid}`);
+    const c = await res.json();
 
-    document.getElementById("detailsTitle").innerText=`Results for: ${hostname}`;
+    let html = `
+        <h2>${c.hostname}</h2>
+        <p>IP: ${c.ip}</p>
+        <p>OS: ${c.os}</p>
+        <h3>Installed Apps</h3>
+        <table>
+        <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>
+    `;
 
-    let html="<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
+    c.apps.forEach(a=>{
+        html += `
+        <tr>
+            <td>${a.name}</td>
+            <td>${a.version}</td>
+            <td>${a.install_date}</td>
+            <td>${formatSize(a.size_bytes)}</td>
+        </tr>`;
+    });
+
+    html += "</table>";
+
+    document.getElementById("modalContent").innerHTML = html;
+    document.getElementById("modal").style.display="flex";
+}
+
+function closeModal(){
+    document.getElementById("modal").style.display="none";
+}
+
+function openGlobalSearch(){
+    document.getElementById("modalContent").innerHTML = `
+        <h2>Global App Search</h2>
+        <input id="searchInput">
+        <button onclick="runGlobalSearch()">Search</button>
+        <div id="searchResults"></div>
+    `;
+    document.getElementById("modal").style.display="flex";
+}
+
+async function runGlobalSearch(){
+    const query = document.getElementById("searchInput").value;
+    const res = await fetch(`/api/search/apps?name=${encodeURIComponent(query)}`);
+    const results = await res.json();
+
+    let html = `
+        <table>
+        <tr><th>Hostname</th><th>Matches</th><th>Action</th></tr>
+    `;
 
     results.forEach(r=>{
-        html+=`<tr>
+        html += `
+        <tr>
+            <td>${r.hostname}</td>
+            <td>${r.count}</td>
+            <td>
+                <button onclick="viewClientSearch('${r.uuid}','${query}','${r.hostname}')">
+                View
+                </button>
+            </td>
+        </tr>`;
+    });
+
+    html += "</table>";
+    document.getElementById("searchResults").innerHTML = html;
+}
+
+async function viewClientSearch(uuid, query, hostname){
+    const res = await fetch(`/api/search/apps/details?uuid=${uuid}&name=${encodeURIComponent(query)}`);
+    const results = await res.json();
+
+    let html = `
+        <h3>${hostname} Results</h3>
+        <table>
+        <tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>
+    `;
+
+    results.forEach(r=>{
+        html += `
+        <tr>
             <td>${r.name}</td>
             <td>${r.version}</td>
             <td>${r.install_date}</td>
@@ -723,13 +730,14 @@ async function viewClientResults(uuid, query, hostname){
         </tr>`;
     });
 
-    html+="</table>";
-    document.getElementById("detailsBody").innerHTML=html;
-    document.getElementById("globalDetailsModal").style.display="flex";
+    html += "</table>";
+
+    document.getElementById("searchResults").innerHTML = html;
 }
 
+loadClients();
 </script>
+
 </body>
 </html>
-
 
