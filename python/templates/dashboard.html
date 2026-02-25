@@ -568,167 +568,362 @@
 
 
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Client Dashboard</title>
+<title>Enterprise Client Monitoring</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
-body { font-family: Arial, sans-serif; background:#f0f2f5; margin:20px; }
-table { width:100%; border-collapse: collapse; margin-top:10px; }
-th, td { border:1px solid #ccc; padding:8px; text-align:left; }
-th { background:#333; color:white; }
-.status-online { color: green; font-weight:bold; }
-.status-offline { color: red; font-weight:bold; }
-input { padding:6px; margin:6px 0; width:300px; }
-button { padding:6px 12px; }
-.popup {
-    display:none; position:fixed; top:50%; left:50%;
-    transform:translate(-50%, -50%);
-    background:white; padding:20px; border:2px solid #333;
-    max-height:80%; overflow:auto; z-index:1000;
+/* ============ Base UI ============ */
+body {
+    margin:0;
+    font-family:'Segoe UI', sans-serif;
+    background:linear-gradient(135deg,#0f172a,#1e293b);
+    color:white;
 }
-.popup table { width:100%; }
-.popup-close { cursor:pointer; color:red; float:right; font-weight:bold; }
-.overlay {
-    display:none; position:fixed; top:0; left:0;
-    width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:999;
+.container { padding:40px; }
+h1,h2 { font-weight:600; }
+.glass-card {
+    background:rgba(255,255,255,0.05);
+    backdrop-filter:blur(12px);
+    border-radius:16px;
+    padding:20px;
+    box-shadow:0 8px 30px rgba(0,0,0,0.4);
+    margin-bottom:25px;
 }
+.stats-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+    gap:20px;
+    margin-bottom:25px;
+}
+.stat-card { text-align:center; font-size:18px; }
+.stat-number { font-size:28px; font-weight:bold; margin-top:10px; }
+input {
+    width:100%;
+    padding:12px;
+    border-radius:10px;
+    border:none;
+    outline:none;
+    background:rgba(255,255,255,0.1);
+    color:white;
+    margin-bottom:20px;
+}
+table { width:100%; border-collapse:collapse; }
+th,td { padding:12px; text-align:left; }
+tr { border-top:1px solid rgba(255,255,255,0.08); }
+tr:hover { background:rgba(255,255,255,0.05); }
+.status { padding:6px 12px; border-radius:20px; font-size:12px; font-weight:600; }
+.online { background:rgba(16,185,129,0.2); color:#10b981; }
+.offline { background:rgba(239,68,68,0.2); color:#ef4444; }
+button {
+    padding:6px 12px;
+    border-radius:8px;
+    border:none;
+    cursor:pointer;
+    font-size:12px;
+    margin-right:5px;
+}
+.view-btn { background:#3b82f6; color:white; }
+.pdf-btn { background:#10b981; color:white; }
+.csv-btn { background:#0ea5e9; color:white; }
+.delete-btn { background:#ef4444; color:white; }
+.back-btn { background:#64748b; color:white; margin-bottom:15px; }
+.history-btn { background:#f59e0b; color:white; }
+.global-btn { background:#8b5cf6; color:white; margin-bottom:15px; }
+
+.hardware-grid {
+    display:grid;
+    grid-template-columns:repeat(auto-fill,minmax(250px,1fr));
+    gap:15px;
+}
+.hardware-item {
+    background:rgba(255,255,255,0.06);
+    padding:15px;
+    border-radius:12px;
+}
+.modal {
+    position:fixed;
+    top:0;left:0;
+    width:100%;height:100%;
+    background:rgba(0,0,0,0.6);
+    display:none;
+    justify-content:center;
+    align-items:center;
+    z-index:1000;
+}
+.modal-content {
+    background:#1e293b;
+    padding:20px;
+    border-radius:12px;
+    width:80%;
+    max-height:80%;
+    overflow:auto;
+}
+.highlight { background:yellow; font-weight:bold; color:black; }
+
+/* Popup table for global search */
+.popup-table { width:100%; border-collapse: collapse; margin-top:10px; }
+.popup-table th, .popup-table td { border:1px solid #ccc; padding:8px; text-align:left; }
+.popup-table th { background:#333; color:white; }
 </style>
 </head>
 <body>
 
-<h1>Client Dashboard</h1>
+<div class="container">
+<h1 id="pageTitle">Enterprise Client Monitoring</h1>
 
-<input type="text" id="appSearch" placeholder="Search apps globally (optional)">
-<button onclick="searchApps()">Search</button>
+<!-- ============ Dashboard View ============ -->
+<div id="dashboardView">
+    <div class="stats-grid">
+        <div class="glass-card stat-card">
+            Total Clients
+            <div class="stat-number" id="totalCount">0</div>
+        </div>
+        <div class="glass-card stat-card">
+            Online
+            <div class="stat-number" id="onlineCount">0</div>
+        </div>
+        <div class="glass-card stat-card">
+            Offline
+            <div class="stat-number" id="offlineCount">0</div>
+        </div>
+    </div>
 
-<table id="clientTable">
-<thead>
-<tr>
-<th>Hostname</th>
-<th>UUID</th>
-<th>IP</th>
-<th>MAC</th>
-<th>Last Seen</th>
-<th>Status</th>
-<th>Matching Apps</th>
-</tr>
-</thead>
-<tbody></tbody>
-</table>
+    <div class="glass-card">
+        <button class="global-btn" onclick="openGlobalSearch()">🔎 Global App Search</button>
+        <input type="text" id="searchInput" placeholder="Search clients..." onkeyup="loadClients()">
+        <table>
+            <thead>
+                <tr>
+                    <th>UUID</th>
+                    <th>Hostname</th>
+                    <th>MAC</th>
+                    <th>Last Seen</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="clientsTable"></tbody>
+        </table>
+    </div>
+</div>
 
-<div class="overlay" id="overlay"></div>
-<div class="popup" id="popup">
-    <span class="popup-close" onclick="closePopup()">X</span>
-    <h3 id="popupTitle">Matched Apps</h3>
-    <table id="popupTable">
-        <thead>
-            <tr>
-                <th>Name</th>
-                <th>Version</th>
-                <th>Install Date</th>
-                <th>Size</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
+<!-- ============ Single Client View ============ -->
+<div id="clientView" style="display:none;" class="glass-card">
+    <button class="back-btn" onclick="goBack()">← Back</button>
+    <div id="clientDetails"></div>
+</div>
+
+<!-- ============ History Modal ============ -->
+<div id="historyModal" class="modal">
+    <div class="modal-content">
+        <h3>App History</h3>
+        <div id="historyBody"></div>
+        <br>
+        <button onclick="closeModal()">Close</button>
+    </div>
+</div>
+
+<!-- ============ Global Search Modal ============ -->
+<div id="globalSearchModal" class="modal">
+    <div class="modal-content">
+        <h3>Global App Search</h3>
+        <input type="text" id="globalSearchInput" placeholder="Enter app name...">
+        <button class="global-btn" onclick="runGlobalSearch()">Search</button>
+        <div id="globalSearchResults"></div>
+        <br>
+        <button onclick="closeGlobalSearch()">Close</button>
+    </div>
 </div>
 
 <script>
-// ================= Load all clients =================
-async function loadClients() {
-    const res = await fetch("/api/clients");
-    const clients = await res.json();
+const API_BASE="/api";
+let currentUUID=null;
 
-    const tbody = document.querySelector("#clientTable tbody");
-    tbody.innerHTML = "";
-
-    for (const c of clients) {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${c.hostname}</td>
-            <td>${c.uuid}</td>
-            <td>${c.ip}</td>
-            <td>${c.mac}</td>
-            <td>${c.last_seen}</td>
-            <td class="status-${c.status.toLowerCase()}">${c.status}</td>
-            <td id="matches-${c.uuid}">-</td>
-        `;
-        tbody.appendChild(tr);
-    }
-}
-
-// ================= Global App Search =================
-async function searchApps() {
-    const name = document.querySelector("#appSearch").value.trim();
-    if (!name) {
-        // reset matches
-        document.querySelectorAll("[id^='matches-']").forEach(td => td.textContent = "-");
-        return;
-    }
-
-    const res = await fetch(`/api/search/apps?name=${encodeURIComponent(name)}`);
-    const data = await res.json();
-
-    // Reset all first
-    document.querySelectorAll("[id^='matches-']").forEach(td => td.textContent = "-");
-
-    // Update matches per client
-    data.forEach(item => {
-        const td = document.querySelector(`#matches-${item.uuid}`);
-        if (td) {
-            td.textContent = item.matches;
-            td.style.cursor = "pointer";
-            td.onclick = () => showMatchedApps(item.uuid, name);
-        }
-    });
-}
-
-// ================= Show matched apps popup =================
-async function showMatchedApps(uuid, appName) {
-    const res = await fetch(`/api/search/apps/${uuid}?name=${encodeURIComponent(appName)}`);
-    const apps = await res.json();
-
-    const tbody = document.querySelector("#popupTable tbody");
-    tbody.innerHTML = "";
-    apps.forEach(a => {
-        const tr = document.createElement("tr");
-        tr.innerHTML = `
-            <td>${a.name}</td>
-            <td>${a.version}</td>
-            <td>${a.install_date}</td>
-            <td>${formatSize(a.size_bytes)}</td>
-        `;
-        tbody.appendChild(tr);
-    });
-
-    document.getElementById("popupTitle").textContent = `Matched Apps for Client: ${uuid}`;
-    document.getElementById("overlay").style.display = "block";
-    document.getElementById("popup").style.display = "block";
-}
-
-// ================= Close popup =================
-function closePopup() {
-    document.getElementById("overlay").style.display = "none";
-    document.getElementById("popup").style.display = "none";
-}
-
-// ================= Helper =================
-function formatSize(bytes) {
-    if (!bytes) return "0 MB";
-    let mb = bytes / (1024*1024);
-    if (mb < 1024) return mb.toFixed(2) + " MB";
+function formatSize(bytes){
+    if(!bytes || bytes===0) return "0 MB";
+    const mb = bytes / (1024*1024);
+    if(mb < 1024) return mb.toFixed(2) + " MB";
     return (mb/1024).toFixed(2) + " GB";
 }
 
-// ================= Auto load =================
-loadClients();
-setInterval(loadClients, 15000); // refresh every 15 sec
+function checkRoute(){
+    const path = window.location.pathname;
+    if(path.startsWith("/client/")){
+        currentUUID = path.split("/client/")[1];
+        showClientView();
+    } else {
+        showDashboardView();
+    }
+}
+
+function showDashboardView(){
+    document.getElementById("dashboardView").style.display="block";
+    document.getElementById("clientView").style.display="none";
+    document.getElementById("pageTitle").innerText="Enterprise Client Monitoring";
+    loadClients();
+}
+
+function showClientView(){
+    document.getElementById("dashboardView").style.display="none";
+    document.getElementById("clientView").style.display="block";
+    document.getElementById("pageTitle").innerText="Client Details";
+    loadClient();
+}
+
+function goBack(){
+    window.history.pushState({}, "", "/");
+    showDashboardView();
+}
+
+// ================= Load Clients =================
+async function loadClients(){
+    const search=document.getElementById("searchInput")?.value||"";
+    const res=await fetch(`${API_BASE}/clients?search=${encodeURIComponent(search)}`);
+    const clients=await res.json();
+
+    let total=clients.length, online=0, offline=0;
+    const table=document.getElementById("clientsTable");
+    table.innerHTML="";
+
+    clients.forEach(c=>{
+        if(c.status==="Online") online++; else offline++;
+        table.innerHTML+=`
+        <tr>
+            <td>${c.uuid}</td>
+            <td>${c.hostname}</td>
+            <td>${c.mac}</td>
+            <td>${c.last_seen}</td>
+            <td><span class="status ${c.status==="Online"?"online":"offline"}">${c.status}</span></td>
+            <td>
+                <button class="view-btn" onclick="navigateClient('${c.uuid}')">View</button>
+                <button class="pdf-btn" onclick="downloadPDF('${c.uuid}')">PDF</button>
+                <button class="csv-btn" onclick="downloadCSV('${c.uuid}')">CSV</button>
+                <button class="delete-btn" onclick="deleteClient('${c.uuid}')">Delete</button>
+            </td>
+        </tr>`;
+    });
+
+    document.getElementById("totalCount").innerText=total;
+    document.getElementById("onlineCount").innerText=online;
+    document.getElementById("offlineCount").innerText=offline;
+}
+
+// ================= Client View =================
+function navigateClient(uuid){
+    window.history.pushState({}, "", `/client/${uuid}`);
+    currentUUID=uuid;
+    showClientView();
+}
+
+async function loadClient(){
+    const res=await fetch(`${API_BASE}/client/${currentUUID}`);
+    const data=await res.json();
+
+    // Hardware
+    let hwHTML="<div class='hardware-grid'>";
+    for (let k in data.hardware){
+        if(k==="Disks" && Array.isArray(data.hardware[k])){
+            let disksHTML="<div class='hardware-item'><b>Disks</b>";
+            data.hardware[k].forEach(disk=>{
+                disksHTML+=`<div style="margin-top:8px; padding:8px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                <strong>${disk.Device}</strong><br>
+                Total: ${disk["Total (GB)"]} GB<br>
+                Free: ${disk["Free (GB)"]} GB
+                </div>`;
+            });
+            disksHTML+="</div>"; hwHTML+=disksHTML;
+        } else {
+            hwHTML+=`<div class="hardware-item"><b>${k}</b><br>${data.hardware[k]}</div>`;
+        }
+    }
+    hwHTML+="</div>";
+
+    // Apps
+    let appsHTML="<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th><th>History</th></tr>";
+    data.apps.forEach(a=>{
+        appsHTML+=`<tr>
+        <td>${a.name||""}</td>
+        <td>${a.version||""}</td>
+        <td>${a.install_date||""}</td>
+        <td>${formatSize(a.size_bytes)}</td>
+        <td><button class="history-btn" onclick="showHistory('${a.name}')">History</button></td>
+        </tr>`;
+    });
+    appsHTML+="</table>";
+
+    document.getElementById("clientDetails").innerHTML=`
+    <p><b>UUID:</b> ${data.uuid}</p>
+    <p><b>Hostname:</b> ${data.hostname}</p>
+    <p><b>IP:</b> ${data.ip || "-"}</p>
+    <p><b>MAC:</b> ${data.mac}</p>
+    <p><b>Last Seen:</b> ${data.last_seen}</p>
+    ${hwHTML}
+    ${appsHTML}`;
+}
+
+// ================= App History =================
+async function showHistory(app){
+    document.getElementById("historyModal").style.display="flex";
+    const res=await fetch(`${API_BASE}/client/${currentUUID}/history?app=${encodeURIComponent(app)}`);
+    const history=await res.json();
+
+    let html="<table><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
+    history.forEach(h=>{
+        html+=`<tr><td>${h.timestamp}</td><td>${h.version}</td><td>${h.install_date}</td><td>${formatSize(h.size_bytes)}</td></tr>`;
+    });
+    html+="</table>";
+    document.getElementById("historyBody").innerHTML=html;
+}
+
+function closeModal(){ document.getElementById("historyModal").style.display="none"; }
+
+// ================= Global App Search =================
+function openGlobalSearch(){ document.getElementById("globalSearchModal").style.display="flex"; }
+function closeGlobalSearch(){ document.getElementById("globalSearchModal").style.display="none"; document.getElementById("globalSearchResults").innerHTML=""; }
+
+async function runGlobalSearch(){
+    const query=document.getElementById("globalSearchInput").value;
+    if(!query) return;
+    const res=await fetch(`${API_BASE}/search/apps?name=${encodeURIComponent(query)}`);
+    const results=await res.json();
+
+    let html="<table class='popup-table'><tr><th>Hostname</th><th>UUID</th><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
+    const regex=new RegExp(`(${query})`,'gi');
+
+    results.forEach(r=>{
+        html+=`<tr>
+        <td>${r.hostname}</td>
+        <td>${r.uuid}</td>
+        <td>${r.name.replace(regex,'<span class="highlight">$1</span>')}</td>
+        <td>${r.version}</td>
+        <td>${r.install_date}</td>
+        <td>${formatSize(r.size_bytes)}</td>
+        </tr>`;
+    });
+
+    html+="</table>";
+    if(results.length===0) html="<p>No results found.</p>";
+    document.getElementById("globalSearchResults").innerHTML=html;
+}
+
+// ================= Download / Delete =================
+function downloadPDF(uuid){ window.open(`${API_BASE}/client/${uuid}/export/pdf`,"_blank"); }
+function downloadCSV(uuid){ window.open(`${API_BASE}/client/${uuid}/export/csv`,"_blank"); }
+async function deleteClient(uuid){
+    if(!confirm("Delete this client permanently?")) return;
+    await fetch(`${API_BASE}/client/${uuid}`,{method:"DELETE"});
+    loadClients();
+}
+
+// ================= Init =================
+checkRoute();
+window.onpopstate=checkRoute;
 </script>
 
 </body>
 </html>
-
 
 
 
