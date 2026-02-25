@@ -2413,27 +2413,60 @@ def get_app_history(uuid):
 
 @app.route("/api/search/apps")
 def global_app_search():
-    name = request.args.get("name", "").lower()
+    name = request.args.get("name", "").strip()
     if not name:
         return jsonify([])
-    con = get_db()
-    cur = con.cursor()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
     cur.execute("""
-        SELECT c.hostname, c.client_uuid, a->>'name' AS app_name, a->>'version' AS version,
-               a->>'install_date' AS install_date, (a->>'size_bytes')::BIGINT AS size_bytes
-        FROM clients c, jsonb_array_elements(c.apps) AS a
-        WHERE lower(a->>'name') LIKE %s
+        SELECT c.hostname, c.uuid, COUNT(a.id)
+        FROM apps a
+        JOIN clients c ON a.client_uuid = c.uuid
+        WHERE LOWER(a.name) LIKE LOWER(%s)
+        GROUP BY c.hostname, c.uuid
+        ORDER BY c.hostname
     """, (f"%{name}%",))
+
     rows = cur.fetchall()
-    con.close()
-    return jsonify([{
-        "hostname": r[0],
-        "uuid": r[1],
-        "name": r[2],
-        "version": r[3],
-        "install_date": r[4],
-        "size_bytes": r[5]
-    } for r in rows])
+    cur.close()
+    conn.close()
+
+    return jsonify([
+        {"hostname": r[0], "uuid": r[1], "matches": r[2]}
+        for r in rows
+    ])
+
+
+@app.route("/api/search/apps/<uuid>")
+def global_app_details(uuid):
+    name = request.args.get("name", "").strip()
+
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT name, version, install_date, size_bytes
+        FROM apps
+        WHERE client_uuid = %s
+        AND LOWER(name) LIKE LOWER(%s)
+        ORDER BY name
+    """, (uuid, f"%{name}%"))
+
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    return jsonify([
+        {
+            "name": r[0],
+            "version": r[1],
+            "install_date": r[2],
+            "size_bytes": r[3]
+        }
+        for r in rows
+    ])
 
 # ================= EXPORT PDF =================
 
