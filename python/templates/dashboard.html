@@ -683,10 +683,7 @@ button {
     </div>
 
     <div class="glass-card">
-
-        <!-- ✅ Global Search Button -->
         <button class="global-btn" onclick="openGlobalSearch()">🔎 Global App Search</button>
-
         <input type="text" id="searchInput" placeholder="Search..." onkeyup="loadClients()">
 
         <table>
@@ -718,18 +715,6 @@ button {
         <div id="historyBody"></div>
         <br>
         <button onclick="closeModal()">Close</button>
-    </div>
-</div>
-
-<!-- ✅ Global Search Modal -->
-<div id="globalSearchModal" class="modal">
-    <div class="modal-content">
-        <h3>Global App Search</h3>
-        <input type="text" id="globalSearchInput" placeholder="Enter app name...">
-        <button class="global-btn" onclick="runGlobalSearch()">Search</button>
-        <div id="globalSearchResults"></div>
-        <br>
-        <button onclick="closeGlobalSearch()">Close</button>
     </div>
 </div>
 
@@ -794,8 +779,6 @@ async function loadClients(){
             <td><span class="status ${c.status==="Online"?"online":"offline"}">${c.status}</span></td>
             <td>
                 <button class="view-btn" onclick="navigateClient('${c.uuid}')">View</button>
-                <button class="pdf-btn" onclick="downloadPDF('${c.uuid}')">PDF</button>
-                <button class="csv-btn" onclick="downloadCSV('${c.uuid}')">CSV</button>
                 <button class="delete-btn" onclick="deleteClient('${c.uuid}')">Delete</button>
             </td>
         </tr>`;
@@ -816,109 +799,55 @@ async function loadClient(){
     const res=await fetch(`${API_BASE}/client/${currentUUID}`);
     const data=await res.json();
 
-    let hwHTML="<div class='section-title'>Hardware Info</div><div class='hardware-grid'>";
+    let appsHTML="<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th><th>History</th></tr>";
 
-    for (let k in data.hardware) {
-        if (k === "Disks" && Array.isArray(data.hardware[k])) {
-            let disksHTML = "<div class='hardware-item'><b>Disks</b>";
-            data.hardware[k].forEach(disk => {
-                disksHTML += `
-                    <div style="margin-top:8px; padding:8px; background:rgba(255,255,255,0.05); border-radius:8px;">
-                        <strong>${disk.Device}</strong><br>
-                        Total: ${disk["Total (GB)"]} GB<br>
-                        Free: ${disk["Free (GB)"]} GB
-                    </div>
-                `;
-            });
-            disksHTML += "</div>";
-            hwHTML += disksHTML;
-        } else {
-            hwHTML += `<div class="hardware-item"><b>${k}</b><br>${data.hardware[k]}</div>`;
-        }
-    }
-
-    hwHTML += "</div>";
-
-    let appsHTML="<div class='section-title'>Installed Apps</div><table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th><th>History</th></tr>";
     data.apps.forEach(a=>{
         appsHTML+=`<tr>
         <td>${a.name||""}</td>
         <td>${a.version||""}</td>
         <td>${a.install_date||""}</td>
         <td>${formatSize(a.size_bytes)}</td>
-        <td><button class="history-btn" onclick="showHistory('${a.name}')">History</button></td>
+        <td><button class="history-btn" onclick='showHistory(${JSON.stringify(a.name||"")})'>History</button></td>
         </tr>`;
     });
+
     appsHTML+="</table>";
 
-    document.getElementById("clientDetails").innerHTML=`
-        <p><b>UUID:</b> ${data.uuid}</p>
-        <p><b>Hostname:</b> ${data.hostname}</p>
-        <p><b>IP:</b> ${data.ip || "-"}</p>
-        <p><b>MAC:</b> ${data.mac}</p>
-        <p><b>Last Seen:</b> ${data.last_seen}</p>
-        ${hwHTML}
-        ${appsHTML}
-    `;
+    document.getElementById("clientDetails").innerHTML=appsHTML;
 }
 
 async function showHistory(app){
     document.getElementById("historyModal").style.display="flex";
-    const res=await fetch(`${API_BASE}/client/${currentUUID}/history?app=${encodeURIComponent(app)}`);
+
+    const res=await fetch(
+        `${API_BASE}/client/${currentUUID}/history?app=${encodeURIComponent((app||"").trim().toLowerCase())}`
+    );
+
     const history=await res.json();
 
+    if(!history || history.length===0){
+        document.getElementById("historyBody").innerHTML="<p>No history records found.</p>";
+        return;
+    }
+
     let html="<table><tr><th>Timestamp</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
+
     history.forEach(h=>{
-        html+=`<tr><td>${h.timestamp}</td><td>${h.version}</td><td>${h.install_date}</td><td>${formatSize(h.size_bytes)}</td></tr>`;
+        html+=`<tr>
+            <td>${h.timestamp||"-"}</td>
+            <td>${h.version||"-"}</td>
+            <td>${h.install_date||"-"}</td>
+            <td>${formatSize(h.size_bytes)}</td>
+        </tr>`;
     });
+
     html+="</table>";
+
     document.getElementById("historyBody").innerHTML=html;
 }
 
 function closeModal(){
     document.getElementById("historyModal").style.display="none";
-}
-
-function openGlobalSearch(){
-    document.getElementById("globalSearchModal").style.display="flex";
-}
-
-function closeGlobalSearch(){
-    document.getElementById("globalSearchModal").style.display="none";
-    document.getElementById("globalSearchResults").innerHTML="";
-}
-
-async function runGlobalSearch(){
-    const query = document.getElementById("globalSearchInput").value;
-    if(!query) return;
-
-    const res = await fetch(`${API_BASE}/search/apps?name=${encodeURIComponent(query)}`);
-    const results = await res.json();
-
-    let html="<table><tr><th>Hostname</th><th>UUID</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
-
-    results.forEach(r=>{
-        html+=`<tr>
-            <td>${r.hostname}</td>
-            <td>${r.uuid}</td>
-            <td>${r.version}</td>
-            <td>${r.install_date}</td>
-            <td>${formatSize(r.size_bytes)}</td>
-        </tr>`;
-    });
-
-    html+="</table>";
-    if(results.length===0) html="<p>No results found.</p>";
-
-    document.getElementById("globalSearchResults").innerHTML=html;
-}
-
-function downloadPDF(uuid){
-    window.open(`/api/client/${uuid}/export/pdf`,"_blank");
-}
-
-function downloadCSV(uuid){
-    window.open(`/api/client/${uuid}/export/csv`,"_blank");
 }
 
 async function deleteClient(uuid){
@@ -934,7 +863,6 @@ window.onpopstate=checkRoute;
 
 </body>
 </html>
-
 
 
 
