@@ -582,7 +582,7 @@ body {
     color:white;
 }
 .container { padding:40px; }
-h1,h2 { font-weight:600; }
+h1,h2,h3,h4 { font-weight:600; }
 .glass-card {
     background:rgba(255,255,255,0.05);
     backdrop-filter:blur(12px);
@@ -636,8 +636,9 @@ button { padding:6px 12px; border-radius:8px; border:none; cursor:pointer; font-
 .history-btn { background:#f59e0b; color:white; }
 .hardware-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(250px,1fr)); gap:15px; }
 .hardware-item { background:rgba(255,255,255,0.06); padding:15px; border-radius:12px; }
-.modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center; }
-.modal-content { background:#1e293b; padding:20px; border-radius:12px; width:80%; max-height:80%; overflow:auto; }
+.modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center; overflow:auto; }
+.modal-content { background:#1e293b; padding:20px; border-radius:12px; width:90%; max-width:1000px; max-height:90%; overflow:auto; }
+.section-title { font-size:18px; font-weight:600; margin-top:20px; margin-bottom:10px; }
 </style>
 </head>
 <body>
@@ -708,11 +709,21 @@ button { padding:6px 12px; border-radius:8px; border:none; cursor:pointer; font-
     </div>
 </div>
 
+<!-- Client Details Modal (from global search) -->
+<div id="clientDetailModal" class="modal">
+    <div class="modal-content">
+        <h3 id="modalClientTitle">Client Details</h3>
+        <div id="modalClientBody"></div>
+        <br>
+        <button onclick="closeClientModal()">Close</button>
+    </div>
+</div>
+
 <script>
 const API_BASE="/api";
 let currentUUID=null;
 
-// Utility
+// ================= UTILITY =================
 function formatSize(bytes){
     if(!bytes || bytes===0) return "0 MB";
     const mb = bytes / (1024*1024);
@@ -849,12 +860,14 @@ async function showHistory(app){
 }
 function closeModal(){ document.getElementById("historyModal").style.display="none"; }
 
-// =================== GLOBAL SEARCH ===================
+// =================== GLOBAL SEARCH & CLIENT MODAL ===================
 function openGlobalSearch(){ document.getElementById("globalSearchModal").style.display="flex"; }
 function closeGlobalSearch(){ 
     document.getElementById("globalSearchModal").style.display="none"; 
     document.getElementById("globalSearchResults").innerHTML=""; 
 }
+function closeClientModal(){ document.getElementById("clientDetailModal").style.display="none"; }
+
 async function runGlobalSearch(){
     const query=document.getElementById("globalSearchInput").value.trim();
     if(!query) return;
@@ -862,35 +875,76 @@ async function runGlobalSearch(){
     const res=await fetch(`${API_BASE}/search/apps?name=${encodeURIComponent(query)}`);
     const data=await res.json();
 
-    // Count matches per client
     const clientMap={};
     data.forEach(d=>{
-        if(!clientMap[d.uuid]) clientMap[d.uuid]={hostname:d.hostname, count:0, apps:[]};
-        clientMap[d.uuid].count++;
+        if(!clientMap[d.uuid]) clientMap[d.uuid]={hostname:d.hostname, apps:[]};
         clientMap[d.uuid].apps.push(d);
     });
 
     let html="<table><tr><th>Hostname</th><th>UUID</th><th>Matches</th></tr>";
     for(let uuid in clientMap){
         const c=clientMap[uuid];
-        html+=`<tr ondblclick='showClientApps(${JSON.stringify(c.apps).replace(/'/g,"\\'")})'>
-            <td>${c.hostname}</td>
-            <td>${uuid}</td>
-            <td>${c.count}</td>
-        </tr>`;
+        html+=`<tr data-uuid="${uuid}"><td>${c.hostname}</td><td>${uuid}</td><td>${c.apps.length}</td></tr>`;
     }
     html+="</table>";
     if(Object.keys(clientMap).length===0) html="<p>No results found.</p>";
     document.getElementById("globalSearchResults").innerHTML=html;
+
+    for(let uuid in clientMap){
+        const row=document.querySelector(`#globalSearchResults tr[data-uuid='${uuid}']`);
+        if(row) row.ondblclick=()=>showClientDetailModal(uuid, query);
+    }
 }
 
-function showClientApps(apps){
-    let html="<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
-    apps.forEach(a=>{
-        html+=`<tr><td>${a.name}</td><td>${a.version}</td><td>${a.install_date}</td><td>${formatSize(a.size_bytes)}</td></tr>`;
+// Show full client details in modal from global search
+async function showClientDetailModal(uuid, searchQuery=""){
+    const res=await fetch(`${API_BASE}/client/${uuid}`);
+    if(!res.ok){ alert("Client not found"); return; }
+    const data=await res.json();
+
+    document.getElementById("modalClientTitle").innerText=`Client Details: ${data.hostname}`;
+
+    let hwHTML="<h4>Hardware Info</h4><div class='hardware-grid'>";
+    for(let k in data.hardware){
+        if(k==="Disks" && Array.isArray(data.hardware[k])){
+            let disksHTML="<div class='hardware-item'><b>Disks</b>";
+            data.hardware[k].forEach(d=>{
+                disksHTML+=`<div style="margin-top:8px; padding:8px; background:rgba(255,255,255,0.05); border-radius:8px;">
+                    <strong>${d.Device}</strong><br>
+                    Total: ${d["Total (GB)"]} GB<br>
+                    Free: ${d["Free (GB)"]} GB
+                </div>`;
+            });
+            disksHTML+="</div>";
+            hwHTML+=disksHTML;
+        } else hwHTML+=`<div class='hardware-item'><b>${k}</b><br>${data.hardware[k]}</div>`;
+    }
+    hwHTML+="</div>";
+
+    let appsHTML="<h4>Installed Apps</h4><table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
+    data.apps.forEach(a=>{
+        const highlight=searchQuery && a.name.toLowerCase().includes(searchQuery.toLowerCase()) ? 
+            "background:rgba(251,191,36,0.3)":"";
+        appsHTML+=`<tr style="${highlight}">
+            <td>${a.name||""}</td>
+            <td>${a.version||""}</td>
+            <td>${a.install_date||""}</td>
+            <td>${formatSize(a.size_bytes)}</td>
+        </tr>`;
     });
-    html+="</table>";
-    alert("Matching Apps:\n\n"+apps.map(a=>`${a.name} | ${a.version} | ${a.install_date}`).join("\n"));
+    appsHTML+="</table>";
+
+    document.getElementById("modalClientBody").innerHTML=`
+        <p><b>UUID:</b> ${data.uuid}</p>
+        <p><b>Hostname:</b> ${data.hostname}</p>
+        <p><b>IP:</b> ${data.ip||"-"}</p>
+        <p><b>MAC:</b> ${data.mac}</p>
+        <p><b>Last Seen:</b> ${data.last_seen}</p>
+        ${hwHTML}
+        ${appsHTML}
+    `;
+
+    document.getElementById("clientDetailModal").style.display="flex";
 }
 
 // =================== EXPORT & DELETE ===================
@@ -902,10 +956,11 @@ async function deleteClient(uuid){
     loadClients();
 }
 
+// =================== INITIALIZATION ===================
 checkRoute();
 window.onpopstate=checkRoute;
-
 </script>
+
 </body>
 </html>
 
