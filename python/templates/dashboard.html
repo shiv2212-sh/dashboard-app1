@@ -639,6 +639,7 @@ button { padding:6px 12px; border-radius:8px; border:none; cursor:pointer; font-
 .modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.6); display:none; justify-content:center; align-items:center; overflow:auto; }
 .modal-content { background:#1e293b; padding:20px; border-radius:12px; width:90%; max-width:800px; max-height:90%; overflow:auto; }
 .section-title { font-size:18px; font-weight:600; margin-top:20px; margin-bottom:10px; }
+.scrollable-table { max-height:400px; overflow-y:auto; }
 </style>
 </head>
 <body>
@@ -713,7 +714,7 @@ button { padding:6px 12px; border-radius:8px; border:none; cursor:pointer; font-
 <div id="appsModal" class="modal">
     <div class="modal-content">
         <h3>Matching Apps</h3>
-        <div id="appsBody"></div>
+        <div id="appsBody" class="scrollable-table"></div>
         <br>
         <button onclick="closeAppsModal()">Close</button>
     </div>
@@ -875,6 +876,7 @@ async function runGlobalSearch(){
     const res=await fetch(`${API_BASE}/search/apps?name=${encodeURIComponent(query)}`);
     const data=await res.json();
 
+    // Group apps per client
     const clientMap={};
     data.forEach(d=>{
         if(!clientMap[d.uuid]) clientMap[d.uuid]={hostname:d.hostname, apps:[]};
@@ -896,12 +898,12 @@ async function runGlobalSearch(){
     }
 }
 
-// Show only matching apps in modal
+// Show only matching apps in scrollable modal
 async function showMatchingApps(uuid, searchQuery){
     const res = await fetch(`${API_BASE}/search/apps/${uuid}?name=${encodeURIComponent(searchQuery)}`);
     const apps = await res.json();
 
-    let html="<table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
+    let html="<div class='scrollable-table'><table><tr><th>Name</th><th>Version</th><th>Install Date</th><th>Size</th></tr>";
     apps.forEach(a=>{
         html+=`<tr style="background:rgba(251,191,36,0.3)">
             <td>${a.name||""}</td>
@@ -910,7 +912,7 @@ async function showMatchingApps(uuid, searchQuery){
             <td>${formatSize(a.size_bytes)}</td>
         </tr>`;
     });
-    html+="</table>";
+    html+="</table></div>";
 
     document.getElementById("appsBody").innerHTML=html;
     document.getElementById("appsModal").style.display="flex";
@@ -932,4 +934,3 @@ window.onpopstate=checkRoute;
 
 </body>
 </html>
-
